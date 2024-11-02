@@ -7,10 +7,28 @@
 #include "InputActionValue.h"
 #include "InputCharacter.generated.h"
 
+
+
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter
 {
 	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
+	class UCameraComponent* Camera;
+
+protected:
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputMappingContext* InputMapping;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* MoveAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* JumpAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* LookAction;
 
 public:
 	// Sets default values for this character's properties
@@ -27,12 +45,11 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+
 protected:
-	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
-	class UInputMappingContext* InputMapping;
+	void Move(const FInputActionValue& InputValue);
+	void Look(const FInputActionValue& InputValue);
+	void Jump();
 
-	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
-	class UInputAction* TestAction;
 
-	void TestInput();
 };

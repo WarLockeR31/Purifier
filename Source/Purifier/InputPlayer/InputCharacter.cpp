@@ -5,12 +5,16 @@
 #include <EnhancedInputSubsystems.h>
 #include <EnhancedInputComponent.h>
 
+#include "Camera/CameraComponent.h"
 // Sets default values
 AInputCharacter::AInputCharacter()
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+	Camera = CreateDefaultSubobject<UCameraComponent>("Camera");
+	Camera->SetupAttachment(RootComponent);
+	Camera->bUsePawnControlRotation = true;
 }
 
 // Called when the game starts or when spawned
@@ -45,12 +49,44 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 
 	if (UEnhancedInputComponent* Input = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		Input->BindAction(TestAction, ETriggerEvent::Triggered, this, &AInputCharacter::TestInput);
+		Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AInputCharacter::Move);
+		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
+		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
 	}
 }
 
-void AInputCharacter::TestInput()
+//Move character according to the input
+void AInputCharacter::Move(const FInputActionValue& InputValue)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1, FColor::Red, "Pressed input action");
+	FVector2D InputVector = InputValue.Get<FVector2D>();
+	if (IsValid(Controller))
+	{
+		//Get forward direction
+		const FRotator Rotation = Controller->GetControlRotation();
+		const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+		//Add movement input
+		AddMovementInput(ForwardDirection, InputVector.Y);
+		AddMovementInput(RightDirection, InputVector.X);
+	}
 }
+
+void AInputCharacter::Look(const FInputActionValue& InputValue)
+{
+	FVector2D InputVector = InputValue.Get<FVector2D>();
+	if (IsValid(Controller))
+	{
+		AddControllerYawInput(InputVector.X);
+		AddControllerPitchInput(InputVector.Y);
+	}
+} 
+
+void AInputCharacter::Jump()
+{
+	Super::Jump();
+}
+
 
