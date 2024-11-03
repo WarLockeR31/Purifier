@@ -6,6 +6,7 @@
 #include <EnhancedInputComponent.h>
 
 #include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 // Sets default values
 AInputCharacter::AInputCharacter()
 {
@@ -52,13 +53,14 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AInputCharacter::Move);
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
+		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::Dash);
 	}
 }
 
 //Move character according to the input
 void AInputCharacter::Move(const FInputActionValue& InputValue)
 {
-	FVector2D InputVector = InputValue.Get<FVector2D>();
+	MoveInputVector = InputValue.Get<FVector2D>();
 	if (IsValid(Controller))
 	{
 		//Get forward direction
@@ -69,8 +71,8 @@ void AInputCharacter::Move(const FInputActionValue& InputValue)
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 		//Add movement input
-		AddMovementInput(ForwardDirection, InputVector.Y);
-		AddMovementInput(RightDirection, InputVector.X);
+		AddMovementInput(ForwardDirection, MoveInputVector.Y);
+		AddMovementInput(RightDirection, MoveInputVector.X);
 	}
 }
 
@@ -87,6 +89,40 @@ void AInputCharacter::Look(const FInputActionValue& InputValue)
 void AInputCharacter::Jump()
 {
 	Super::Jump();
+}
+
+void AInputCharacter::Dash()
+{
+	if (!CanDash)
+		return;
+
+	CanDash = false;
+
+	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+	//Get forward direction
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+	FVector DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
+	LaunchCharacter(DashVector * DashDistance, true, true);
+
+	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::StopDashing, 0.3, false);
+}
+
+void AInputCharacter::StopDashing()
+{
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
+	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::ResetDashCooldown, DashCooldown, false);
+}
+
+
+void AInputCharacter::ResetDashCooldown()
+{
+	CanDash = true;
 }
 
 

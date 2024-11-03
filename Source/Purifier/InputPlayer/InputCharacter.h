@@ -17,6 +17,12 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* Camera;
 
+	//???
+	FTimerHandle DashHandle;
+
+	UPROPERTY(VisibleAnywhere, Category = "Movement") //???
+	FVector2D MoveInputVector;
+
 protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
@@ -29,6 +35,18 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputAction* LookAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* DashAction;
+
+	UPROPERTY(EditAnywhere, Category = "Movement") //???
+	bool CanDash;
+
+	UPROPERTY(EditAnywhere, Category = "Movement") //???
+	float DashDistance;
+
+	UPROPERTY(EditAnywhere, Category = "Movement") //???
+	float DashCooldown;
 
 public:
 	// Sets default values for this character's properties
@@ -51,5 +69,8 @@ protected:
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
 
+	void Dash();
+	void ResetDashCooldown();
+	void StopDashing();
 
 };
