@@ -23,6 +23,10 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Movement") //???
 	FVector2D MoveInputVector;
 
+	// Начальная и конечная позиции рывка
+	FVector DashStartLocation;
+	FVector DashEndLocation;
+
 protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
@@ -39,14 +43,26 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputAction* DashAction;
 
-	UPROPERTY(EditAnywhere, Category = "Movement") //???
-	bool CanDash;
+	UPROPERTY(EditAnywhere, Category = "Dash") //???
+	bool bIsDashing;
 
-	UPROPERTY(EditAnywhere, Category = "Movement") //???
+	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashDistance;
 
-	UPROPERTY(EditAnywhere, Category = "Movement") //???
+	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashCooldown;
+
+	// Кривая для изменения скорости рывка
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+	UCurveFloat* DashCurve;
+
+	// Таймлайн для контроля рывка
+	UPROPERTY()
+	class UTimelineComponent* DashTimeline;
+
+	//// Начальная скорость рывка
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+	//float DashSpeed;
 
 public:
 	// Sets default values for this character's properties
@@ -69,8 +85,16 @@ protected:
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
 
-	void Dash();
-	void ResetDashCooldown();
-	void StopDashing();
+
+	// Функция, вызываемая для начала рывка
+	void StartDash();
+
+	// Функция, вызываемая каждый раз при обновлении `Timeline`
+	UFUNCTION()
+	void DashTimelineProgress(float Value);
+
+	// Функция, вызываемая после завершения рывка
+	UFUNCTION()
+	void OnDashFinished();
 
 };

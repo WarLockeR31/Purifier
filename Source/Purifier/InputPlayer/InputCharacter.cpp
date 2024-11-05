@@ -6,6 +6,7 @@
 #include <EnhancedInputComponent.h>
 
 #include "Camera/CameraComponent.h"
+#include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 // Sets default values
 AInputCharacter::AInputCharacter()
@@ -16,13 +17,24 @@ AInputCharacter::AInputCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>("Camera");
 	Camera->SetupAttachment(RootComponent);
 	Camera->bUsePawnControlRotation = true;
+
+	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 }
 
 // Called when the game starts or when spawned
 void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	// Настройка функции для изменения положения персонажа при обновлении Timeline
+	FOnTimelineFloat DashProgress;
+	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
+	DashTimeline->AddInterpFloat(DashCurve, DashProgress);
+
+	// Настройка функции, вызываемой при завершении Timeline
+	FOnTimelineEvent TimelineFinishedCallback;
+	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
+	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
 }
 
 // Called every frame
@@ -53,7 +65,7 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AInputCharacter::Move);
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
-		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::Dash);
+		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::StartDash);
 	}
 }
 
@@ -91,14 +103,14 @@ void AInputCharacter::Jump()
 	Super::Jump();
 }
 
-void AInputCharacter::Dash()
+void AInputCharacter::StartDash()
 {
-	if (!CanDash)
+	if (bIsDashing)
 		return;
 
-	CanDash = false;
-
+	bIsDashing = true;
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+
 	//Get forward direction
 	const FRotator Rotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -107,22 +119,26 @@ void AInputCharacter::Dash()
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	FVector DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
-	LaunchCharacter(DashVector * DashDistance, true, true);
 
-	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::StopDashing, 0.3, false);
+	DashStartLocation = GetActorLocation();
+	DashEndLocation = DashStartLocation + DashVector * DashDistance;
+
+	// Запуск Timeline
+	DashTimeline->PlayFromStart();
 }
 
-void AInputCharacter::StopDashing()
+void AInputCharacter::DashTimelineProgress(float Value)
 {
-	GetCharacterMovement()->StopMovementImmediately();
-	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
-	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::ResetDashCooldown, DashCooldown, false);
+	if (DashCurve)
+	{
+		// Получаем скорость из кривой и перемещаем персонажа
+		FVector NewLocation = FMath::Lerp(DashStartLocation, DashEndLocation, Value);
+		SetActorLocation(NewLocation);
+	}
 }
 
-
-void AInputCharacter::ResetDashCooldown()
+void AInputCharacter::OnDashFinished()
 {
-	CanDash = true;
+	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+	bIsDashing = false;
 }
-
-
