@@ -26,7 +26,8 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	// Начальная и конечная позиции рывка
 	FVector DashStartLocation;
 	FVector DashEndLocation;
-
+	FVector DashVector;
+	float   DashSpeedCoefficient;
 protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
@@ -48,6 +49,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashDistance;
+
+	UPROPERTY(EditAnywhere, Category = "Dash") //???
+	float DashDuration;
 
 	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashCooldown;
@@ -93,8 +97,12 @@ protected:
 	UFUNCTION()
 	void DashTimelineProgress(float Value);
 
+	void ResetDashCooldown();
 	// Функция, вызываемая после завершения рывка
 	UFUNCTION()
 	void OnDashFinished();
+
+	float GetSpeedCoefficient() const;
+
 
 };

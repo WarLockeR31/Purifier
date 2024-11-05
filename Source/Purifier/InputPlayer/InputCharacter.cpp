@@ -8,6 +8,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include <format>
 // Sets default values
 AInputCharacter::AInputCharacter()
 {
@@ -30,11 +31,14 @@ void AInputCharacter::BeginPlay()
 	FOnTimelineFloat DashProgress;
 	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
 	DashTimeline->AddInterpFloat(DashCurve, DashProgress);
+	DashTimeline->SetPlayRate(1.f / DashDuration);
 
 	// Настройка функции, вызываемой при завершении Timeline
 	FOnTimelineEvent TimelineFinishedCallback;
 	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
 	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
+
+	DashSpeedCoefficient = GetSpeedCoefficient();
 }
 
 // Called every frame
@@ -108,6 +112,7 @@ void AInputCharacter::StartDash()
 	if (bIsDashing)
 		return;
 
+	GetCharacterMovement()->StopMovementImmediately();
 	bIsDashing = true;
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
 
@@ -118,10 +123,7 @@ void AInputCharacter::StartDash()
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-	FVector DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
-
-	DashStartLocation = GetActorLocation();
-	DashEndLocation = DashStartLocation + DashVector * DashDistance;
+	DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
 
 	// Запуск Timeline
 	DashTimeline->PlayFromStart();
@@ -129,16 +131,36 @@ void AInputCharacter::StartDash()
 
 void AInputCharacter::DashTimelineProgress(float Value)
 {
-	if (DashCurve)
-	{
-		// Получаем скорость из кривой и перемещаем персонажа
-		FVector NewLocation = FMath::Lerp(DashStartLocation, DashEndLocation, Value);
-		SetActorLocation(NewLocation);
-	}
+	// Получаем скорость из кривой и перемещаем персонажа
+	LaunchCharacter(DashVector * Value * DashSpeedCoefficient, true, true);
+
+	//AddMovementInput(DashVector * Value * DashSpeedCoefficient * 100); ???
 }
 
 void AInputCharacter::OnDashFinished()
 {
-	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+	LaunchCharacter(FVector(0.0001, 0, 0), true, true);
+	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
+
+	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::ResetDashCooldown, DashCooldown, false);
+}
+
+void AInputCharacter::ResetDashCooldown()
+{
 	bIsDashing = false;
+}
+
+float AInputCharacter::GetSpeedCoefficient() const
+{
+	float MinTime, MaxTime;
+	DashCurve->GetTimeRange(MinTime, MaxTime);
+
+	float step = (MaxTime - MinTime) / 200.f;
+	float ApproximateCurveS = 0.f;
+	for (float i = MinTime; i < MaxTime; i += step)
+	{
+		ApproximateCurveS += DashCurve->GetFloatValue(i + step) * step;
+	}
+
+	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
 }
