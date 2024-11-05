@@ -17,15 +17,10 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* Camera;
 
-	//???
-	FTimerHandle DashHandle;
-
 	UPROPERTY(VisibleAnywhere, Category = "Movement") //???
 	FVector2D MoveInputVector;
 
-	// Начальная и конечная позиции рывка
-	FVector DashStartLocation;
-	FVector DashEndLocation;
+	FTimerHandle DashHandle;
 	FVector DashVector;
 	float   DashSpeedCoefficient;
 protected:
@@ -56,17 +51,13 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashCooldown;
 
-	// Кривая для изменения скорости рывка
+	//Dash curve
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 	UCurveFloat* DashCurve;
 
-	// Таймлайн для контроля рывка
+	//Dash timeline
 	UPROPERTY()
 	class UTimelineComponent* DashTimeline;
-
-	//// Начальная скорость рывка
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
-	//float DashSpeed;
 
 public:
 	// Sets default values for this character's properties
@@ -88,20 +79,19 @@ protected:
 	void Move(const FInputActionValue& InputValue);
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
-
-
-	// Функция, вызываемая для начала рывка
 	void StartDash();
 
-	// Функция, вызываемая каждый раз при обновлении `Timeline`
-	UFUNCTION()
+
+	//Timeline tick
+	UFUNCTION() //???
 	void DashTimelineProgress(float Value);
-
-	void ResetDashCooldown();
-	// Функция, вызываемая после завершения рывка
-	UFUNCTION()
+	
+	//Timeline End
+	UFUNCTION() //???
 	void OnDashFinished();
+	void ResetDashCooldown();
 
+	//Integrating curve
 	float GetSpeedCoefficient() const;
 
 

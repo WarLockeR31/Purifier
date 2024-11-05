@@ -27,16 +27,16 @@ void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Настройка функции для изменения положения персонажа при обновлении Timeline
+
 	FOnTimelineFloat DashProgress;
 	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
 	DashTimeline->AddInterpFloat(DashCurve, DashProgress);
 	DashTimeline->SetPlayRate(1.f / DashDuration);
 
-	// Настройка функции, вызываемой при завершении Timeline
 	FOnTimelineEvent TimelineFinishedCallback;
 	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
 	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
+	
 
 	DashSpeedCoefficient = GetSpeedCoefficient();
 }
@@ -79,14 +79,12 @@ void AInputCharacter::Move(const FInputActionValue& InputValue)
 	MoveInputVector = InputValue.Get<FVector2D>();
 	if (IsValid(Controller))
 	{
-		//Get forward direction
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-		//Add movement input
 		AddMovementInput(ForwardDirection, MoveInputVector.Y);
 		AddMovementInput(RightDirection, MoveInputVector.X);
 	}
@@ -115,8 +113,8 @@ void AInputCharacter::StartDash()
 	GetCharacterMovement()->StopMovementImmediately();
 	bIsDashing = true;
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+	
 
-	//Get forward direction
 	const FRotator Rotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
 
@@ -125,15 +123,13 @@ void AInputCharacter::StartDash()
 
 	DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
 
-	// Запуск Timeline
+	//Timeline start
 	DashTimeline->PlayFromStart();
 }
 
 void AInputCharacter::DashTimelineProgress(float Value)
 {
-	// Получаем скорость из кривой и перемещаем персонажа
 	LaunchCharacter(DashVector * Value * DashSpeedCoefficient, true, true);
-
 	//AddMovementInput(DashVector * Value * DashSpeedCoefficient * 100); ???
 }
 
