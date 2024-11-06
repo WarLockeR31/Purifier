@@ -27,6 +27,7 @@ void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	GetCharacterMovement()->MaxAcceleration = 100000.f;
 
 	FOnTimelineFloat DashProgress;
 	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
@@ -46,6 +47,8 @@ void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	float CurrentSpeed = GetVelocity().Size();
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("Current Speed: %f"), CurrentSpeed));
 }
 
 // Called to bind functionality to input
