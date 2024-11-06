@@ -7,7 +7,17 @@
 #include "InputActionValue.h"
 #include "InputCharacter.generated.h"
 
+UENUM(BlueprintType)
+enum class EWallRunSide : uint8 {
+	Left = 0 UMETA(DisplayName = "LEFT"),
+	Right = 1  UMETA(DisplayName = "RIGHT"),
+};
 
+UENUM(BlueprintType)
+enum class EWallRunEndReason : uint8 {
+	FallOffWall = 0 UMETA(DisplayName = "FallOffWall"),
+	JumpedOffWall = 1  UMETA(DisplayName = "JumpedOffWall"),
+};
 
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter
@@ -23,6 +33,19 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	FTimerHandle DashHandle;
 	FVector DashVector;
 	float   DashSpeedCoefficient;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	FVector WallRunDirection;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	bool bWallRunning;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	EWallRunSide WallRunSide;
+
+	UCapsuleComponent* CapsuleComponent;
+
+	float BaseAirControl;
 protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
@@ -40,7 +63,7 @@ protected:
 	class UInputAction* DashAction;
 
 	UPROPERTY(EditAnywhere, Category = "Dash") //???
-	bool bIsDashing;
+	bool bDashing;
 
 	UPROPERTY(EditAnywhere, Category = "Dash") //???
 	float DashDistance;
@@ -55,9 +78,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 	UCurveFloat* DashCurve;
 
+	//Dash curve
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
+	UCurveFloat* WallRunCurve;
+
 	//Dash timeline
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
 	class UTimelineComponent* DashTimeline;
+
+	
 
 public:
 	// Sets default values for this character's properties
@@ -74,7 +103,9 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-
+	//Dash timeline
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
+	class UTimelineComponent* WallRunTimeline;
 protected:
 	void Move(const FInputActionValue& InputValue);
 	void Look(const FInputActionValue& InputValue);
@@ -94,5 +125,14 @@ protected:
 	//Integrating curve
 	float GetSpeedCoefficient() const;
 
+	UFUNCTION()
+	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
+	bool SurfaceIsWallRunnable(FVector SurfaceNormal);
+
+	bool AreRequiredKeysDown() const;
+
+	void StartWallRun();
+	void UpdateWallRun(float Value);
+	void EndWallRun();
 };

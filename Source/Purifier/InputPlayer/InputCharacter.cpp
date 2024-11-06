@@ -6,9 +6,15 @@
 #include <EnhancedInputComponent.h>
 
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include <format>
+
+
+
+
+
+
 // Sets default values
 AInputCharacter::AInputCharacter()
 {
@@ -19,7 +25,12 @@ AInputCharacter::AInputCharacter()
 	Camera->SetupAttachment(RootComponent);
 	Camera->bUsePawnControlRotation = true;
 
+	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
+	
+	
+	CapsuleComponent = GetCapsuleComponent();
+	CapsuleComponent->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);
 }
 
 // Called when the game starts or when spawned
@@ -37,9 +48,20 @@ void AInputCharacter::BeginPlay()
 	FOnTimelineEvent TimelineFinishedCallback;
 	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
 	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
-	
+
+	FOnTimelineFloat WallRunProgress;
+	WallRunProgress.BindUFunction(this, FName("UpdateWallRun"));
+	WallRunTimeline->AddInterpFloat(WallRunCurve, WallRunProgress);
+	WallRunTimeline->SetTimelineLength(1.f);
+	WallRunTimeline->SetTimelineLengthMode(ETimelineLengthMode::TL_TimelineLength);
+	WallRunTimeline->SetLooping(true);
+
+	 //
+	                                    //
 
 	DashSpeedCoefficient = GetSpeedCoefficient();
+
+	BaseAirControl = GetCharacterMovement()->AirControl;
 }
 
 // Called every frame
@@ -106,15 +128,16 @@ void AInputCharacter::Look(const FInputActionValue& InputValue)
 void AInputCharacter::Jump()
 {
 	Super::Jump();
+
 }
 
 void AInputCharacter::StartDash()
 {
-	if (bIsDashing)
+	if (bDashing)
 		return;
 
 	GetCharacterMovement()->StopMovementImmediately();
-	bIsDashing = true;
+	bDashing = true;
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
 	
 
@@ -146,7 +169,7 @@ void AInputCharacter::OnDashFinished()
 
 void AInputCharacter::ResetDashCooldown()
 {
-	bIsDashing = false;
+	bDashing = false;
 }
 
 float AInputCharacter::GetSpeedCoefficient() const
@@ -162,4 +185,119 @@ float AInputCharacter::GetSpeedCoefficient() const
 	}
 
 	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
+}
+
+void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!SurfaceIsWallRunnable(Hit.ImpactNormal))
+	{
+		return;
+	}
+
+	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
+	{
+		WallRunSide = EWallRunSide::Right;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+	}
+	else
+	{
+		WallRunSide = EWallRunSide::Left;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+	}
+
+
+	if (AreRequiredKeysDown())
+	{
+		StartWallRun();
+	}
+}
+
+bool AInputCharacter::SurfaceIsWallRunnable(FVector SurfaceNormal)
+{
+	if (SurfaceNormal.Z < -0.05f)
+	{
+		return false;
+	}
+
+	FVector SurfaceNormalProjection = FVector(SurfaceNormal.X, SurfaceNormal.Y, 0).GetSafeNormal();
+	float angle = FMath::Acos(SurfaceNormal.Dot(SurfaceNormalProjection));
+
+	return angle < GetCharacterMovement()->GetWalkableFloorAngle();
+}
+
+bool AInputCharacter::AreRequiredKeysDown() const
+{
+	if (MoveInputVector.Y < 0.1f)
+	{
+		return false;
+	}
+
+	return MoveInputVector.X > 0.1f  && (WallRunSide == EWallRunSide::Right) || 
+		   MoveInputVector.X < -0.1f && (WallRunSide == EWallRunSide::Left);
+}
+
+void AInputCharacter::StartWallRun()
+{
+	bWallRunning = true;
+
+	GetCharacterMovement()->AirControl = 1.f;
+	GetCharacterMovement()->GravityScale = 0.f;
+	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 1.f));
+
+	WallRunTimeline->PlayFromStart();
+}
+
+void AInputCharacter::UpdateWallRun(float Value)
+{
+	if (!AreRequiredKeysDown())
+	{
+		EndWallRun();
+		return;
+	}
+		
+
+	FHitResult Hit;
+	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? 1.f : -1.f).Cross(WallRunDirection) * 20.f;
+
+	if (!GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECollisionChannel::ECC_Visibility))
+	{
+		EndWallRun();
+		return;
+	}
+
+	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
+	{
+		if (WallRunSide != EWallRunSide::Right)
+		{
+			EndWallRun();
+			return;
+		}
+		WallRunSide = EWallRunSide::Right;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+	}
+	else
+	{
+		if (WallRunSide != EWallRunSide::Left)
+		{
+			EndWallRun();
+			return;
+		}
+		WallRunSide = EWallRunSide::Left;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+	}
+
+	AddMovementInput(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f));
+
+}
+
+void AInputCharacter::EndWallRun()
+{
+	WallRunTimeline->Stop();
+
+	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 0.f));
+	GetCharacterMovement()->GravityScale = 1.f;
+	GetCharacterMovement()->AirControl = BaseAirControl; //Air Control
+
+	bWallRunning = false;
 }
