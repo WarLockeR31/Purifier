@@ -135,7 +135,7 @@ void AInputCharacter::DashTimelineProgress(float Value)
 
 void AInputCharacter::OnDashFinished()
 {
-	LaunchCharacter(FVector(0.0001, 0, 0), true, true);
+	LaunchCharacter(DashVector * DashDistance * 50.f, true, true);
 	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
 
 	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::ResetDashCooldown, DashCooldown, false);
