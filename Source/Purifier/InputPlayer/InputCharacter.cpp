@@ -267,7 +267,7 @@ void AInputCharacter::UpdateWallRun()
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("2"));
 
 	FHitResult Hit;
-	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? 1.f : -1.f).Cross(WallRunDirection) * 75.f;
+	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? -1.f : 1.f).Cross(WallRunDirection) * 200.f;
 
 	if (!GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECollisionChannel::ECC_Visibility))
 	{
@@ -280,26 +280,27 @@ void AInputCharacter::UpdateWallRun()
 	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.1"));
-		if (WallRunSide != EWallRunSide::Right)
-		{
-			EndWallRun();
-			return;
-		}
-		
-		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
-	}
-	else
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.2"));
 		if (WallRunSide != EWallRunSide::Left)
 		{
 			EndWallRun();
 			return;
 		}
-		
+
 		WallRunSide = EWallRunSide::Left;
 		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.2"));
+		if (WallRunSide != EWallRunSide::Right)
+		{
+			EndWallRun();
+			return;
+		}
+
+		WallRunSide = EWallRunSide::Right;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+		
 	}
 
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("WallRunTick"));
