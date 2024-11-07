@@ -133,6 +133,8 @@ protected:
 	bool AreRequiredKeysDown() const;
 
 	void StartWallRun();
-	void UpdateWallRun(float Value);
+
+	UFUNCTION()
+	void UpdateWallRun();
 	void EndWallRun();
 };

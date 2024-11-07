@@ -69,8 +69,8 @@ void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	float CurrentSpeed = GetVelocity().Size();
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("Current Speed: %f"), CurrentSpeed));
+	//float CurrentSpeed = GetVelocity().Size();
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("Current Speed: %f"), CurrentSpeed));
 }
 
 // Called to bind functionality to input
@@ -190,23 +190,24 @@ float AInputCharacter::GetSpeedCoefficient() const
 void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (!SurfaceIsWallRunnable(Hit.ImpactNormal))
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("ImpactNormal: %f, %f, %f"), Hit.ImpactNormal.X, Hit.ImpactNormal.Y, Hit.ImpactNormal.Z));
+
+	if (bWallRunning || !SurfaceIsWallRunnable(Hit.ImpactNormal))
 	{
 		return;
 	}
-
 	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
-	{
-		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
-	}
-	else
 	{
 		WallRunSide = EWallRunSide::Left;
 		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 	}
+	else
+	{
+		WallRunSide = EWallRunSide::Right;
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+	}
 
-
+	
 	if (AreRequiredKeysDown())
 	{
 		StartWallRun();
@@ -215,13 +216,17 @@ void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* 
 
 bool AInputCharacter::SurfaceIsWallRunnable(FVector SurfaceNormal)
 {
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("SurfaceNormal.Z: %f"), SurfaceNormal.Z));
 	if (SurfaceNormal.Z < -0.05f)
 	{
 		return false;
 	}
 
 	FVector SurfaceNormalProjection = FVector(SurfaceNormal.X, SurfaceNormal.Y, 0).GetSafeNormal();
-	float angle = FMath::Acos(SurfaceNormal.Dot(SurfaceNormalProjection));
+	float angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(SurfaceNormalProjection, SurfaceNormal)));
+
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("Angle: %f"), angle));
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("WalkAngle: %f"), GetCharacterMovement()->GetWalkableFloorAngle()));
 
 	return angle < GetCharacterMovement()->GetWalkableFloorAngle();
 }
@@ -240,25 +245,29 @@ bool AInputCharacter::AreRequiredKeysDown() const
 void AInputCharacter::StartWallRun()
 {
 	bWallRunning = true;
-
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("StartedWallRun"));
+	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->AirControl = 1.f;
 	GetCharacterMovement()->GravityScale = 0.f;
 	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 1.f));
 
-	WallRunTimeline->PlayFromStart();
+	WallRunTimeline->Play();
 }
 
-void AInputCharacter::UpdateWallRun(float Value)
+void AInputCharacter::UpdateWallRun()
 {
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("1"));
+
 	if (!AreRequiredKeysDown())
 	{
 		EndWallRun();
 		return;
 	}
-		
+
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("2"));
 
 	FHitResult Hit;
-	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? 1.f : -1.f).Cross(WallRunDirection) * 20.f;
+	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? 1.f : -1.f).Cross(WallRunDirection) * 75.f;
 
 	if (!GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECollisionChannel::ECC_Visibility))
 	{
@@ -266,27 +275,34 @@ void AInputCharacter::UpdateWallRun(float Value)
 		return;
 	}
 
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3"));
+
 	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
 	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.1"));
 		if (WallRunSide != EWallRunSide::Right)
 		{
 			EndWallRun();
 			return;
 		}
+		
 		WallRunSide = EWallRunSide::Right;
 		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
 	}
 	else
 	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.2"));
 		if (WallRunSide != EWallRunSide::Left)
 		{
 			EndWallRun();
 			return;
 		}
+		
 		WallRunSide = EWallRunSide::Left;
 		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 	}
 
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("WallRunTick"));
 	AddMovementInput(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f));
 
 }
@@ -294,7 +310,7 @@ void AInputCharacter::UpdateWallRun(float Value)
 void AInputCharacter::EndWallRun()
 {
 	WallRunTimeline->Stop();
-
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 0.f));
 	GetCharacterMovement()->GravityScale = 1.f;
 	GetCharacterMovement()->AirControl = BaseAirControl; //Air Control
