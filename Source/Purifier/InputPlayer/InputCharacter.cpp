@@ -2,8 +2,8 @@
 
 
 #include "Purifier/InputPlayer/InputCharacter.h"
-#include <EnhancedInputSubsystems.h>
 #include <EnhancedInputComponent.h>
+#include <EnhancedInputSubsystems.h>
 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -211,7 +211,7 @@ void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* 
 	}
 }
 
-bool AInputCharacter::SurfaceIsWallRunnable(FVector SurfaceNormal)
+bool AInputCharacter::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
 {
 	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("SurfaceNormal.Z: %f"), SurfaceNormal.Z));
 	if (SurfaceNormal.Z < -0.05f)
@@ -269,7 +269,7 @@ void AInputCharacter::UpdateWallRun()
 	TArray<AActor*> actorsToIgnore;
 
 	
-	FVector EndLocation = GetActorLocation() + FVector::CrossProduct(FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? -1.f : 1.f), WallRunDirection) * 200.f;
+	FVector EndLocation = GetActorLocation() + WallRunDirection.Cross(FVector(0.f, 0.f, WallRunSide == EWallRunSide::Left ? -1.f : 1.f)) * 2000.f;
 
 	if (WallRunSide == EWallRunSide::Left)
 	{
@@ -305,7 +305,7 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = -Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
 	}
 	else
 	{
@@ -317,7 +317,7 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = -Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 		
 	}
 

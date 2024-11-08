@@ -128,7 +128,7 @@ protected:
 	UFUNCTION()
 	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	bool SurfaceIsWallRunnable(FVector SurfaceNormal);
+	bool SurfaceIsWallRunnable(const FVector SurfaceNormal) const;
 
 	bool AreRequiredKeysDown() const;
 
