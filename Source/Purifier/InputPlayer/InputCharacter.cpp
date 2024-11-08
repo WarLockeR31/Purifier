@@ -9,10 +9,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-
-
-
-
+#include "Kismet/KismetSystemLibrary.h"
 
 
 // Sets default values
@@ -266,10 +263,30 @@ void AInputCharacter::UpdateWallRun()
 
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("2"));
 
-	FHitResult Hit;
-	FVector EndLocation = GetActorLocation() + FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? -1.f : 1.f).Cross(WallRunDirection) * 200.f;
 
-	if (!GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECollisionChannel::ECC_Visibility))
+
+	FHitResult Hit;
+	TArray<AActor*> actorsToIgnore;
+
+	
+	FVector EndLocation = GetActorLocation() + FVector::CrossProduct(FVector(0.f, 0.f, WallRunSide == EWallRunSide::Right ? -1.f : 1.f), WallRunDirection) * 200.f;
+
+	if (WallRunSide == EWallRunSide::Left)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("Left"));
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("Right"));
+	}
+
+	FCollisionQueryParams CollisionParameters;
+	CollisionParameters.AddIgnoredActor(this);
+	actorsToIgnore.Add(this);
+
+		//GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECC_Visibility, CollisionParameters)
+		
+	if (!UKismetSystemLibrary::LineTraceSingle(GetWorld(), GetActorLocation(), EndLocation, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, actorsToIgnore, EDrawDebugTrace::Persistent, Hit, true))
 	{
 		EndWallRun();
 		return;
@@ -277,6 +294,7 @@ void AInputCharacter::UpdateWallRun()
 
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3"));
 
+	GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, FString::Printf(TEXT("HIN: %f, %f, %f"), Hit.ImpactPoint.X, Hit.ImpactPoint.Y, Hit.ImpactPoint.Z));
 	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("3.1"));
@@ -287,7 +305,7 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+		WallRunDirection = -Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 	}
 	else
 	{
@@ -299,12 +317,13 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+		WallRunDirection = -Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
 		
 	}
 
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("WallRunTick"));
-	AddMovementInput(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f));
+	
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("WallRunTick"));
+	LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 100.f, true, true);
 
 }
 
