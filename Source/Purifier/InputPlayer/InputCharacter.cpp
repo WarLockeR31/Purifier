@@ -231,7 +231,7 @@ bool AInputCharacter::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
 bool AInputCharacter::AreRequiredKeysDown() const
 {
 	if (MoveInputVector.Y < 0.1f)
-	{
+	{ 
 		return false;
 	}
 
@@ -265,10 +265,10 @@ void AInputCharacter::UpdateWallRun()
 
 
 
+	
+
 	FHitResult Hit;
 	TArray<AActor*> actorsToIgnore;
-
-	
 	FVector EndLocation = GetActorLocation() + WallRunDirection.Cross(FVector(0.f, 0.f, WallRunSide == EWallRunSide::Left ? -1.f : 1.f)) * 2000.f;
 
 	if (WallRunSide == EWallRunSide::Left)
@@ -280,13 +280,11 @@ void AInputCharacter::UpdateWallRun()
 		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("Right"));
 	}
 
-	FCollisionQueryParams CollisionParameters;
-	CollisionParameters.AddIgnoredActor(this);
 	actorsToIgnore.Add(this);
 
 		//GetWorld()->LineTraceSingleByChannel(Hit, GetActorLocation(), EndLocation, ECC_Visibility, CollisionParameters)
 		
-	if (!UKismetSystemLibrary::LineTraceSingle(GetWorld(), GetActorLocation(), EndLocation, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, actorsToIgnore, EDrawDebugTrace::Persistent, Hit, true))
+	if (!UKismetSystemLibrary::LineTraceSingle(GetWorld(), GetActorLocation(), EndLocation, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, actorsToIgnore, EDrawDebugTrace::ForOneFrame, Hit, true))
 	{
 		EndWallRun();
 		return;
@@ -305,7 +303,7 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 	}
 	else
 	{
@@ -317,7 +315,7 @@ void AInputCharacter::UpdateWallRun()
 		}
 
 		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f)); 
 		
 	}
 
