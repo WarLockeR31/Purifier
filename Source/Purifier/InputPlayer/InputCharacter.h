@@ -13,11 +13,11 @@ enum class EWallRunSide : uint8 {
 	Right = 1  UMETA(DisplayName = "RIGHT"),
 };
 
-UENUM(BlueprintType)
-enum class EWallRunEndReason : uint8 {
-	FallOffWall = 0 UMETA(DisplayName = "FallOffWall"),
-	JumpedOffWall = 1  UMETA(DisplayName = "JumpedOffWall"),
-};
+//UENUM(BlueprintType)
+//enum class EWallRunEndReason : uint8 {
+//	FallOffWall = 0 UMETA(DisplayName = "FallOffWall"),
+//	JumpedOffWall = 1  UMETA(DisplayName = "JumpedOffWall"),
+//};
 
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter
@@ -77,10 +77,6 @@ protected:
 	//Dash curve
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 	UCurveFloat* DashCurve;
-
-	//Dash curve
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
-	UCurveFloat* WallRunCurve;
 
 	//Dash timeline
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
