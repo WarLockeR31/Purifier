@@ -27,26 +27,46 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* Camera;
 
-	UPROPERTY(VisibleAnywhere, Category = "Movement") //???
+	UPROPERTY(VisibleAnywhere, Category = "EnhancedInput")
 	FVector2D MoveInputVector;
 
+#pragma region Dash
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
 	FTimerHandle DashHandle;
-	FVector DashVector;
-	float   DashSpeedCoefficient;
 
-	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
+	FVector DashVector;
+
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
+	float DashSpeedCoefficient;
+
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
+	bool bDashing;
+
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
+	class UTimelineComponent* DashTimeline;
+#pragma endregion Dash
+
+#pragma region WallRun
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	FVector WallRunDirection;
 
-	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	bool bWallRunning;
 
-	UPROPERTY(VisibleAnywhere, Category = "WallRunning")
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	EWallRunSide WallRunSide;
 
-	UCapsuleComponent* CapsuleComponent;
-
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	float BaseAirControl;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	class UTimelineComponent* WallRunTimeline;
+#pragma endregion WallRun
+
 protected:
+
+#pragma region Input
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
 
@@ -61,28 +81,22 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputAction* DashAction;
+#pragma endregion Input
 
-	UPROPERTY(EditAnywhere, Category = "Dash") //???
-	bool bDashing;
-
-	UPROPERTY(EditAnywhere, Category = "Dash") //???
+#pragma region Dash
+	UPROPERTY(EditAnywhere, Category = "Dash") 
 	float DashDistance;
 
-	UPROPERTY(EditAnywhere, Category = "Dash") //???
+	UPROPERTY(EditAnywhere, Category = "Dash") 
 	float DashDuration;
 
-	UPROPERTY(EditAnywhere, Category = "Dash") //???
+	UPROPERTY(EditAnywhere, Category = "Dash") 
 	float DashCooldown;
 
 	//Dash curve
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+	UPROPERTY(EditAnywhere, Category = "Dash")
 	UCurveFloat* DashCurve;
-
-	//Dash timeline
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
-	class UTimelineComponent* DashTimeline;
-
-	
+#pragma endregion Dash
 
 public:
 	// Sets default values for this character's properties
@@ -99,37 +113,31 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	//Dash timeline
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WallRunning")
-	class UTimelineComponent* WallRunTimeline;
 protected:
 	void Move(const FInputActionValue& InputValue);
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
+
+	//Dash
 	void StartDash();
-
-
-	//Timeline tick
-	UFUNCTION() //???
+	UFUNCTION()
 	void DashTimelineProgress(float Value);
-	
-	//Timeline End
-	UFUNCTION() //???
+	UFUNCTION()
 	void OnDashFinished();
 	void ResetDashCooldown();
-
 	//Integrating curve
 	float GetSpeedCoefficient() const;
 
-	UFUNCTION()
+	//WallRun trigger
+	UFUNCTION() 
 	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
-
+	//WallRun helper
 	bool SurfaceIsWallRunnable(const FVector SurfaceNormal) const;
-
+	//WallRun helper
 	bool AreRequiredKeysDown() const;
 
+	//WallRun
 	void StartWallRun();
-
 	UFUNCTION()
 	void UpdateWallRun();
 	void EndWallRun();

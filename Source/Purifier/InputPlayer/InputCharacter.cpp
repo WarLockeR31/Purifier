@@ -25,9 +25,7 @@ AInputCharacter::AInputCharacter()
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 	
-	
-	CapsuleComponent = GetCapsuleComponent();
-	CapsuleComponent->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);
+	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);  //WallRun on
 }
 
 // Called when the game starts or when spawned
@@ -84,7 +82,7 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AInputCharacter::Move);
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
-		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::StartDash);
+		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::StartDash);  //Dash on
 	}
 }
 
@@ -118,8 +116,10 @@ void AInputCharacter::Look(const FInputActionValue& InputValue)
 void AInputCharacter::Jump()
 {
 	Super::Jump();
-}
+} 
 
+#pragma region Dash
+//_____________________________________________________________________________________________________
 void AInputCharacter::StartDash()
 {
 	if (bDashing)
@@ -174,6 +174,8 @@ float AInputCharacter::GetSpeedCoefficient() const
 
 	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
 }
+//_____________________________________________________________________________________________________
+#pragma endregion Dash
 
 void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
@@ -200,6 +202,8 @@ void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* 
 	}
 }
 
+#pragma region WallRun
+//_____________________________________________________________________________________________________
 bool AInputCharacter::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
 {
 	if (SurfaceNormal.Z < -0.05f)
@@ -291,3 +295,5 @@ void AInputCharacter::EndWallRun()
 	bWallRunning = false;
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 }
+//_____________________________________________________________________________________________________
+#pragma endregion WallRun
