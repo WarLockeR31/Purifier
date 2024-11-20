@@ -22,6 +22,12 @@ class PURIFIER_API UHandSwayComponent : public UActorComponent
 
 protected:
 	
+public:
+	UPROPERTY(EditAnywhere, Category = "HandsSway")
+	float HandsOffsetX;
+
+	UPROPERTY(EditAnywhere, Category = "HandsSway")
+	float MaxDownPitch;
 
 public:	
 	// Sets default values for this component's properties

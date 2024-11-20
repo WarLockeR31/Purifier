@@ -2,6 +2,8 @@
 
 
 #include "HandSwayComponent.h"
+
+#include "Camera/CameraActor.h"
 #include <Kismet/KismetMathLibrary.h>
 
 // Sets default values for this component's properties
@@ -47,12 +49,16 @@ void UHandSwayComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 
 float UHandSwayComponent::GetCameraPitch()
 {
+	FRotator Delta = UKismetMathLibrary::NormalizedDeltaRotator(Owner->GetControlRotation(), Owner->GetActorRotation());
 	
-	float pitch = UKismetMathLibrary::NormalizeToRange(Owner->GetActorRotation().Yaw - Owner->GetControlRotation().Yaw, -90.f, 90.f);
+	float Pitch = 2.f * (float)UKismetMathLibrary::NormalizeToRange(Delta.Pitch, -90.f, 90.f);
+	Pitch = FMath::Clamp(Pitch, 0.f, 1.f);
+	Pitch = FMath::Lerp(MaxDownPitch, 0.f, Pitch);
 	
-	FVector HandsPosition = FVector(pitch*100, hands->GetRelativeLocation().Y, hands->GetRelativeLocation().Z);
+	
+	FVector HandsPosition = FVector(Pitch + HandsOffsetX, hands->GetRelativeLocation().Y, hands->GetRelativeLocation().Z);
 	hands->SetRelativeLocation(HandsPosition);
 
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f"), pitch));
+	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f"), Pitch));
 	return 0.0f;
 }

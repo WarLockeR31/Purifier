@@ -27,6 +27,7 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* Camera;
 
+
 	UPROPERTY(VisibleAnywhere, Category = "EnhancedInput")
 	FVector2D MoveInputVector;
 
