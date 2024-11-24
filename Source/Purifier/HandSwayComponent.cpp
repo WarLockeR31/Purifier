@@ -32,7 +32,7 @@ void UHandSwayComponent::BeginPlay()
 		UE_LOG(LogTemp, Error, TEXT("Incorrect owner of the HandSwayComponent"));
 	}
 	
-	
+	CameraRotationPrev = Owner->Controller->GetControlRotation();
 }
 
 
@@ -63,7 +63,7 @@ float UHandSwayComponent::GetCameraPitch()
 	FVector HandsPosition = FVector(Pitch + CameraHandsOffsetX, hands->GetRelativeLocation().Y, hands->GetRelativeLocation().Z);
 	hands->SetRelativeLocation(HandsPosition);
 
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f"), Pitch));
+	
 	return 0.0f;
 }
 
@@ -74,13 +74,15 @@ float UHandSwayComponent::HandsSway()
 
 	float Roll =  FMath::Clamp(Delta.Pitch * -1.f, -5.f, 5.f);
 	float Yaw = FMath::Clamp(Delta.Yaw, -5.f, 5.f);
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), Roll, Yaw));
 	FRotator Sway = FRotator(Roll, 0.f, Yaw);
 	CameraRotationRate = FMath::RInterpTo(CameraRotationRate, Sway, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
 
 
-	float CameraRotationOffsetX = FMath::Lerp((float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Roll, -5.f, 5.f), -10.f, 10.f);
-	float CameraRotationOffsetZ = FMath::Lerp((float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Yaw, -5.f, 5.f), -6.f, 6.f);
-	CameraRotationOffset = FVector(0.f, 0.f, 0.f);
+	float CameraRotationOffsetX = FMath::Lerp(-10.f, 10.f, (float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Roll, -5.f, 5.f));
+	float CameraRotationOffsetZ = FMath::Lerp(-6.f, 6.f, (float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Yaw, -5.f, 5.f));
+	CameraRotationOffset = FVector(CameraRotationOffsetZ, 0.f, CameraRotationOffsetX);
+	
 	CameraRotationPrev = CameraRotationCur;
 	return 0.0f;
 }
