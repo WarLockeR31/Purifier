@@ -144,4 +144,6 @@ protected:
 	UFUNCTION()
 	void UpdateWallRun();
 	void EndWallRun();
+
+	
 };

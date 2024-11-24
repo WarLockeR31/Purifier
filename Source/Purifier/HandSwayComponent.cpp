@@ -43,7 +43,7 @@ void UHandSwayComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	GetCameraPitch();
-
+	HandsSway();
 	// ...
 }
 
@@ -52,13 +52,35 @@ float UHandSwayComponent::GetCameraPitch()
 	FRotator Delta = UKismetMathLibrary::NormalizedDeltaRotator(Owner->GetControlRotation(), Owner->GetActorRotation());
 	
 	float Pitch = 2.f * (float)UKismetMathLibrary::NormalizeToRange(Delta.Pitch, -90.f, 90.f);
+	
+	PitchOffsetPos = FVector(0.f, FMath::Lerp(3.f, -3.f, Pitch), FMath::Lerp(2.f, -2.f, Pitch));
+	
+	
 	Pitch = FMath::Clamp(Pitch, 0.f, 1.f);
 	Pitch = FMath::Lerp(MaxDownPitch, 0.f, Pitch);
 	
 	
-	FVector HandsPosition = FVector(Pitch + HandsOffsetX, hands->GetRelativeLocation().Y, hands->GetRelativeLocation().Z);
+	FVector HandsPosition = FVector(Pitch + CameraHandsOffsetX, hands->GetRelativeLocation().Y, hands->GetRelativeLocation().Z);
 	hands->SetRelativeLocation(HandsPosition);
 
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f"), Pitch));
+	return 0.0f;
+}
+
+float UHandSwayComponent::HandsSway()
+{
+	CameraRotationCur = Owner->Controller->GetControlRotation();
+	FRotator Delta = UKismetMathLibrary::NormalizedDeltaRotator(CameraRotationCur, CameraRotationPrev);
+
+	float Roll =  FMath::Clamp(Delta.Pitch * -1.f, -5.f, 5.f);
+	float Yaw = FMath::Clamp(Delta.Yaw, -5.f, 5.f);
+	FRotator Sway = FRotator(Roll, 0.f, Yaw);
+	CameraRotationRate = FMath::RInterpTo(CameraRotationRate, Sway, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
+
+
+	float CameraRotationOffsetX = FMath::Lerp((float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Roll, -5.f, 5.f), -10.f, 10.f);
+	float CameraRotationOffsetZ = FMath::Lerp((float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Yaw, -5.f, 5.f), -6.f, 6.f);
+	CameraRotationOffset = FVector(0.f, 0.f, 0.f);
+	CameraRotationPrev = CameraRotationCur;
 	return 0.0f;
 }

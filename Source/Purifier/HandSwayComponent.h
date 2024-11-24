@@ -21,10 +21,25 @@ class PURIFIER_API UHandSwayComponent : public UActorComponent
 	USkeletalMeshComponent* hands;
 
 protected:
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HandsSway")
+	FVector PitchOffsetPos;
+
+	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
+	FRotator CameraRotationPrev;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HandsSway")
+	FRotator CameraRotationCur;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HandsSway")
+	FRotator CameraRotationRate;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HandsSway")
+	FVector CameraRotationOffset;
 	
 public:
 	UPROPERTY(EditAnywhere, Category = "HandsSway")
-	float HandsOffsetX;
+	float CameraHandsOffsetX;
 
 	UPROPERTY(EditAnywhere, Category = "HandsSway")
 	float MaxDownPitch;
@@ -38,6 +53,8 @@ protected:
 	virtual void BeginPlay() override;
 
 	float GetCameraPitch();
+
+	float HandsSway();
 
 public:	
 	// Called every frame
