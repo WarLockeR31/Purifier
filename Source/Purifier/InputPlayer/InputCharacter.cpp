@@ -10,6 +10,7 @@
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include <Purifier/InputPlayer/HandSwayComponent.h>
 
 
 // Sets default values
@@ -24,6 +25,8 @@ AInputCharacter::AInputCharacter()
 	Camera->bUsePawnControlRotation = true;
 
 	GetMesh()->SetupAttachment(Camera);
+
+	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 
 	
 
@@ -63,7 +66,7 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
+	UpdateLocationLagPos();
 }
 
 // Called to bind functionality to input

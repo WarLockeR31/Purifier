@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+
 #include "InputCharacter.generated.h"
 
 UENUM(BlueprintType)
@@ -18,6 +19,8 @@ enum class EWallRunSide : uint8 {
 //	FallOffWall = 0 UMETA(DisplayName = "FallOffWall"),
 //	JumpedOffWall = 1  UMETA(DisplayName = "JumpedOffWall"),
 //};
+
+class UHandSwayComponent;
 
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter
@@ -33,6 +36,9 @@ class PURIFIER_API AInputCharacter : public ACharacter
 
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
 	FVector LocationLagPos;
+
+	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
+	UHandSwayComponent* HandSwayComponent;
 
 	
 #pragma region Dash
