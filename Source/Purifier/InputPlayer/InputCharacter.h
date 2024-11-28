@@ -31,6 +31,10 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "EnhancedInput")
 	FVector2D MoveInputVector;
 
+	UPROPERTY(VisibleAnywhere, Category = "Movement")
+	FVector LocationLagPos;
+
+	
 #pragma region Dash
 	UPROPERTY(VisibleAnywhere, Category = "Dash")
 	FTimerHandle DashHandle;
@@ -99,6 +103,9 @@ protected:
 	UCurveFloat* DashCurve;
 #pragma endregion Dash
 
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float BaseWalkSpeed;
+
 public:
 	// Sets default values for this character's properties
 	AInputCharacter();
@@ -145,5 +152,7 @@ protected:
 	void UpdateWallRun();
 	void EndWallRun();
 
-	
+public:
+	void UpdateLocationLagPos(); //???
+	FVector GetLocationLagPos();
 };

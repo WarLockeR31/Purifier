@@ -179,6 +179,35 @@ float AInputCharacter::GetSpeedCoefficient() const
 
 	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
 }
+
+void AInputCharacter::UpdateLocationLagPos()
+{
+	const FVector Velocity = this->GetVelocity();
+
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
+
+
+	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
+	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
+	float UpVelocity = FVector::DotProduct(Velocity, UpDirection);
+
+	FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
+
+	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 4.f);
+
+	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
+}
+
+FVector AInputCharacter::GetLocationLagPos()
+{
+	return LocationLagPos;
+}
+
 //_____________________________________________________________________________________________________
 #pragma endregion Dash
 
@@ -302,3 +331,4 @@ void AInputCharacter::EndWallRun()
 }
 //_____________________________________________________________________________________________________
 #pragma endregion WallRun
+
