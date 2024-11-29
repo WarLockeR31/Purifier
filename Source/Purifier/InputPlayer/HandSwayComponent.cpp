@@ -95,7 +95,7 @@ void UHandSwayComponent::AerialHandSway()
 
 	AerialTilt = FMath::RInterpTo(AerialTilt, NewAerialTilt, GetWorld()->GetDeltaSeconds(), InterpSpeed);
 	AerialOffset = FMath::VInterpTo(AerialOffset, NewAerialOffset, GetWorld()->GetDeltaSeconds(), InterpSpeed);
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), AerialTilt.Yaw, AerialOffset.X));
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), AerialTilt.Yaw, AerialOffset.X));
 }
 
 

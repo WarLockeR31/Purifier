@@ -112,6 +112,12 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Movement")
 	float BaseWalkSpeed;
 
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float CoyoteTime;
+
+	UPROPERTY(VisibleAnywhere, Category = "Movement")
+	FTimerHandle CoyoteTimerHandle;
+
 public:
 	// Sets default values for this character's properties
 	AInputCharacter();
@@ -157,6 +163,15 @@ protected:
 	UFUNCTION()
 	void UpdateWallRun();
 	void EndWallRun();
+
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode) override;\
+	virtual void Landed(const FHitResult& Hit) override;
+
+	virtual void CheckJumpInput(float DeltaTime) override;
+	virtual bool CanJumpInternal_Implementation() const override;
+	virtual void OnJumped_Implementation() override;
+
+	void OnCoyoteTimePassed();
 
 public:
 	void UpdateLocationLagPos(); //???

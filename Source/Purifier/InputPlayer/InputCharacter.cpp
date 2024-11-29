@@ -10,6 +10,7 @@
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include <Kismet/KismetMathLibrary.h>
 #include <Purifier/InputPlayer/HandSwayComponent.h>
 
 
@@ -27,8 +28,6 @@ AInputCharacter::AInputCharacter()
 	GetMesh()->SetupAttachment(Camera);
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
-
-	
 
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
@@ -183,34 +182,6 @@ float AInputCharacter::GetSpeedCoefficient() const
 	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
 }
 
-void AInputCharacter::UpdateLocationLagPos()
-{
-	const FVector Velocity = this->GetVelocity();
-
-	const FRotator Rotation = Controller->GetControlRotation();
-	const FRotator YawRotation(0, Rotation.Yaw, 0);
-
-	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
-
-
-	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
-	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
-	float UpVelocity = FVector::DotProduct(Velocity, UpDirection);
-
-	FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
-
-	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 4.f);
-
-	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
-}
-
-FVector AInputCharacter::GetLocationLagPos()
-{
-	return LocationLagPos;
-}
-
 //_____________________________________________________________________________________________________
 #pragma endregion Dash
 
@@ -332,6 +303,106 @@ void AInputCharacter::EndWallRun()
 	bWallRunning = false;
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 }
+
 //_____________________________________________________________________________________________________
 #pragma endregion WallRun
 
+void AInputCharacter::UpdateLocationLagPos()
+{
+	const FVector Velocity = this->GetVelocity();
+
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
+
+
+	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
+	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
+	float UpVelocity = FVector::DotProduct(Velocity, UpDirection);
+
+	FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
+
+	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 4.f);
+
+	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
+}
+
+FVector AInputCharacter::GetLocationLagPos()
+{
+	return LocationLagPos;
+}
+
+void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	if (GetCharacterMovement()->IsFalling())
+	{
+		float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
+		float CoyoteTimeModifier = FMath::Lerp(0.25f, 1.f, FMath::Clamp(NormalizedVelocity, 0.f, 1.f));
+
+		float CorrecterCoyoteTime = CoyoteTime * CoyoteTimeModifier;
+
+		GetWorld()->GetTimerManager().SetTimer(
+			CoyoteTimerHandle,
+			this,
+			&AInputCharacter::OnCoyoteTimePassed,
+			CorrecterCoyoteTime,
+			false);
+	}
+}
+
+void AInputCharacter::OnCoyoteTimePassed()
+{
+
+}
+
+void AInputCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	GetWorld()->GetTimerManager().ClearTimer(CoyoteTimerHandle);
+}
+
+void AInputCharacter::CheckJumpInput(float DeltaTime)
+{
+	JumpCurrentCountPreJump = JumpCurrentCount;
+
+	if (GetCharacterMovement())
+	{
+		if (bPressedJump)
+		{
+			// If this is the first jump and we're already falling,
+			// then increment the JumpCount to compensate.
+			const bool bFirstJump = JumpCurrentCount == 0;
+			if (bFirstJump && GetCharacterMovement()->IsFalling() && GetWorld()->GetTimerManager().GetTimerRemaining(CoyoteTimerHandle) <= 0.f)
+			{
+				JumpCurrentCount++;
+			}
+
+			const bool bDidJump = CanJump() && GetCharacterMovement()->DoJump(bClientUpdating);
+			if (bDidJump)
+			{
+				// Transition from not (actively) jumping to jumping.
+				if (!bWasJumping)
+				{
+					JumpCurrentCount++;
+					JumpForceTimeRemaining = GetJumpMaxHoldTime();
+					OnJumped();
+				}
+			}
+
+			bWasJumping = bDidJump;
+		}
+	}
+}
+
+void AInputCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+
+	GetWorld()->GetTimerManager().ClearTimer(CoyoteTimerHandle);
+}
