@@ -29,6 +29,7 @@ AInputCharacter::AInputCharacter()
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 
+	WalkingTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WalkingTimeline"));
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 	
@@ -56,6 +57,15 @@ void AInputCharacter::BeginPlay()
 	WallRunTimeline->AddInterpFloat(DashCurve, WallRunProgress);
 	WallRunTimeline->SetLooping(true);
 
+	FOnTimelineFloat WalkingProgress;
+	WalkingProgress.BindUFunction(this, FName("UpdateWalkingHandSway"));
+	WalkingTimeline->AddInterpFloat(WalkingLeftRightCurve, WalkingProgress);
+	/*WalkingTimeline->AddInterpFloat(WalkingUpDownCurve, WalkingProgress);
+	WalkingTimeline->AddInterpFloat(WalkingRollCurve, WalkingProgress);*/
+	WalkingTimeline->SetLooping(true);
+	WalkingTimeline->PlayFromStart();
+	
+
 	DashSpeedCoefficient = GetSpeedCoefficient();
 
 	BaseAirControl = GetCharacterMovement()->AirControl;
@@ -65,7 +75,7 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	UpdateLocationLagPos();
+	//UpdateLocationLagPos();
 }
 
 // Called to bind functionality to input
@@ -304,8 +314,31 @@ void AInputCharacter::EndWallRun()
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 }
 
+
 //_____________________________________________________________________________________________________
 #pragma endregion WallRun
+
+void AInputCharacter::UpdateWalkingHandSway(float Value)
+{
+	float CurTLTime = WalkingTimeline->GetPlaybackPosition();
+
+	float WalkAnomOffsetX = FMath::Lerp(-0.4f, 0.4f, WalkingLeftRightCurve->GetFloatValue(CurTLTime));
+	float WalkAnomOffsetZ = FMath::Lerp(-0.35f, 0.2f, WalkingUpDownCurve->GetFloatValue(CurTLTime));
+	WalkAnimOffset.Set(WalkAnomOffsetX, 0.f, WalkAnomOffsetZ);
+
+	//float WalkAnomOffsetZ = FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime));
+	//WalkAnimTilt.Pitch = FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime));
+	WalkAnimTilt = FRotator(0.f, FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime)), 0.f);
+
+	float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
+	WalkAnimAlpha = GetCharacterMovement()->IsFalling() ? 0.f : NormalizedVelocity;
+
+	WalkingTimeline->SetPlayRate(FMath::Lerp(0.f, 1.65f, WalkAnimAlpha));
+	UpdateLocationLagPos();
+
+	
+}
+
 
 void AInputCharacter::UpdateLocationLagPos()
 {
