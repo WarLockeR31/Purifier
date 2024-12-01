@@ -10,6 +10,8 @@
 #include "Components/TimelineComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include <Kismet/KismetMathLibrary.h>
+#include <Purifier/InputPlayer/HandSwayComponent.h>
 
 
 // Sets default values
@@ -19,9 +21,15 @@ AInputCharacter::AInputCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 
 	Camera = CreateDefaultSubobject<UCameraComponent>("Camera");
+	//GetMesh()->SetupAttachment(Camera);
 	Camera->SetupAttachment(RootComponent);
 	Camera->bUsePawnControlRotation = true;
 
+	GetMesh()->SetupAttachment(Camera);
+
+	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
+
+	WalkingTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WalkingTimeline"));
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 	
@@ -49,6 +57,15 @@ void AInputCharacter::BeginPlay()
 	WallRunTimeline->AddInterpFloat(DashCurve, WallRunProgress);
 	WallRunTimeline->SetLooping(true);
 
+	FOnTimelineFloat WalkingProgress;
+	WalkingProgress.BindUFunction(this, FName("UpdateWalkingHandSway"));
+	WalkingTimeline->AddInterpFloat(WalkingLeftRightCurve, WalkingProgress);
+	/*WalkingTimeline->AddInterpFloat(WalkingUpDownCurve, WalkingProgress);
+	WalkingTimeline->AddInterpFloat(WalkingRollCurve, WalkingProgress);*/
+	WalkingTimeline->SetLooping(true);
+	WalkingTimeline->PlayFromStart();
+	
+
 	DashSpeedCoefficient = GetSpeedCoefficient();
 
 	BaseAirControl = GetCharacterMovement()->AirControl;
@@ -58,7 +75,9 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
+	//UpdateLocationLagPos();
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), LocationLagPos.X, LocationLagPos.Y, LocationLagPos.Z));
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), GetVelocity().X, GetVelocity().Y, GetVelocity().Z));
 }
 
 // Called to bind functionality to input
@@ -125,19 +144,20 @@ void AInputCharacter::StartDash()
 	if (bDashing)
 		return;
 
-	GetCharacterMovement()->StopMovementImmediately();
+	//GetCharacterMovement()->StopMovementImmediately();
 	bDashing = true;
+
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
 	
 
 	const FRotator Rotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
-
+	
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
-
+	
 	//Timeline start
 	DashTimeline->PlayFromStart();
 }
@@ -174,6 +194,7 @@ float AInputCharacter::GetSpeedCoefficient() const
 
 	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
 }
+
 //_____________________________________________________________________________________________________
 #pragma endregion Dash
 
@@ -295,5 +316,127 @@ void AInputCharacter::EndWallRun()
 	bWallRunning = false;
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 }
+
+
 //_____________________________________________________________________________________________________
 #pragma endregion WallRun
+
+void AInputCharacter::UpdateWalkingHandSway(float Value)
+{
+	float CurTLTime = WalkingTimeline->GetPlaybackPosition();
+
+	float WalkAnomOffsetX = FMath::Lerp(-0.4f, 0.4f, WalkingLeftRightCurve->GetFloatValue(CurTLTime));
+	float WalkAnomOffsetZ = FMath::Lerp(-0.35f, 0.2f, WalkingUpDownCurve->GetFloatValue(CurTLTime));
+	WalkAnimOffset.Set(WalkAnomOffsetX, 0.f, WalkAnomOffsetZ);
+
+	WalkAnimTilt = FRotator(0.f, FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime)), 0.f);
+
+	float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
+	WalkAnimAlpha = GetCharacterMovement()->IsFalling() ? 0.f : NormalizedVelocity;
+
+	WalkingTimeline->SetPlayRate(FMath::Lerp(0.f, 1.65f, WalkAnimAlpha));
+	UpdateLocationLagPos();
+
+	
+}
+
+
+void AInputCharacter::UpdateLocationLagPos()
+{
+	const FVector Velocity = this->GetVelocity();  
+
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
+	
+
+	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
+	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
+	float UpVelocity = FVector::DotProduct(Velocity, GetActorUpVector());
+
+	//FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
+	FVector NewLocationLagPos = FVector(-2 * ForwardVelocity / BaseWalkSpeed, -2 * RightVelocity / BaseWalkSpeed, -2 * UpVelocity /GetCharacterMovement()->JumpZVelocity);
+	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 6.f);
+
+	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 1.5f / FVector::Dist(LocationLagPos, NewLocationLagPos));
+}
+
+FVector AInputCharacter::GetLocationLagPos()
+{
+	return LocationLagPos;
+}
+
+void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	if (GetCharacterMovement()->IsFalling())
+	{
+		float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
+		float CoyoteTimeModifier = FMath::Lerp(0.25f, 1.f, FMath::Clamp(NormalizedVelocity, 0.f, 1.f));
+
+		float CorrecterCoyoteTime = CoyoteTime * CoyoteTimeModifier;
+
+		GetWorld()->GetTimerManager().SetTimer(
+			CoyoteTimerHandle,
+			this,
+			&AInputCharacter::OnCoyoteTimePassed,
+			CorrecterCoyoteTime,
+			false);
+	}
+}
+
+void AInputCharacter::OnCoyoteTimePassed()
+{
+
+}
+
+void AInputCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	GetWorld()->GetTimerManager().ClearTimer(CoyoteTimerHandle);
+}
+
+void AInputCharacter::CheckJumpInput(float DeltaTime)
+{
+	JumpCurrentCountPreJump = JumpCurrentCount;
+
+	if (GetCharacterMovement())
+	{
+		if (bPressedJump)
+		{
+			// If this is the first jump and we're already falling,
+			// then increment the JumpCount to compensate.
+			const bool bFirstJump = JumpCurrentCount == 0;
+			if (bFirstJump && GetCharacterMovement()->IsFalling() && GetWorld()->GetTimerManager().GetTimerRemaining(CoyoteTimerHandle) <= 0.f)
+			{
+				JumpCurrentCount++;
+			}
+
+			const bool bDidJump = CanJump() && GetCharacterMovement()->DoJump(bClientUpdating);
+			if (bDidJump)
+			{
+				// Transition from not (actively) jumping to jumping.
+				if (!bWasJumping)
+				{
+					JumpCurrentCount++;
+					JumpForceTimeRemaining = GetJumpMaxHoldTime();
+					OnJumped();
+				}
+			}
+
+			bWasJumping = bDidJump;
+		}
+	}
+}
+
+void AInputCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+
+	GetWorld()->GetTimerManager().ClearTimer(CoyoteTimerHandle);
+}
