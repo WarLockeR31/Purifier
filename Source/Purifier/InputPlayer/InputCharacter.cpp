@@ -76,6 +76,8 @@ void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	//UpdateLocationLagPos();
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), LocationLagPos.X, LocationLagPos.Y, LocationLagPos.Z));
+	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), GetVelocity().X, GetVelocity().Y, GetVelocity().Z));
 }
 
 // Called to bind functionality to input
@@ -142,19 +144,20 @@ void AInputCharacter::StartDash()
 	if (bDashing)
 		return;
 
-	GetCharacterMovement()->StopMovementImmediately();
+	//GetCharacterMovement()->StopMovementImmediately();
 	bDashing = true;
+
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
 	
 
 	const FRotator Rotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
-
+	
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
-
+	
 	//Timeline start
 	DashTimeline->PlayFromStart();
 }
@@ -326,8 +329,6 @@ void AInputCharacter::UpdateWalkingHandSway(float Value)
 	float WalkAnomOffsetZ = FMath::Lerp(-0.35f, 0.2f, WalkingUpDownCurve->GetFloatValue(CurTLTime));
 	WalkAnimOffset.Set(WalkAnomOffsetX, 0.f, WalkAnomOffsetZ);
 
-	//float WalkAnomOffsetZ = FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime));
-	//WalkAnimTilt.Pitch = FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime));
 	WalkAnimTilt = FRotator(0.f, FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime)), 0.f);
 
 	float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
@@ -342,7 +343,7 @@ void AInputCharacter::UpdateWalkingHandSway(float Value)
 
 void AInputCharacter::UpdateLocationLagPos()
 {
-	const FVector Velocity = this->GetVelocity();
+	const FVector Velocity = this->GetVelocity();  
 
 	const FRotator Rotation = Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -350,17 +351,17 @@ void AInputCharacter::UpdateLocationLagPos()
 	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
-
+	
 
 	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
 	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
-	float UpVelocity = FVector::DotProduct(Velocity, UpDirection);
+	float UpVelocity = FVector::DotProduct(Velocity, GetActorUpVector());
 
-	FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
+	//FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
+	FVector NewLocationLagPos = FVector(-2 * ForwardVelocity / BaseWalkSpeed, -2 * RightVelocity / BaseWalkSpeed, -2 * UpVelocity /GetCharacterMovement()->JumpZVelocity);
+	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 6.f);
 
-	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 4.f);
-
-	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
+	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 1.5f / FVector::Dist(LocationLagPos, NewLocationLagPos));
 }
 
 FVector AInputCharacter::GetLocationLagPos()
