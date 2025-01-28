@@ -11,6 +11,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include <Kismet/KismetMathLibrary.h>
+#include <Purifier/BaseDashComponent.h>
 #include <Purifier/InputPlayer/HandSwayComponent.h>
 
 
@@ -31,7 +32,6 @@ AInputCharacter::AInputCharacter()
 
 	WalkingTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WalkingTimeline"));
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
-	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 	
 	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);  //WallRun on
 }
@@ -41,20 +41,22 @@ void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	
+	DashComponent = FindComponentByClass<UBaseDashComponent>();
 	GetCharacterMovement()->MaxAcceleration = 100000.f;
 
-	FOnTimelineFloat DashProgress;
+	/*FOnTimelineFloat DashProgress;
 	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
 	DashTimeline->AddInterpFloat(DashCurve, DashProgress);
 	DashTimeline->SetPlayRate(1.f / DashDuration);
 
 	FOnTimelineEvent TimelineFinishedCallback;
 	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
-	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
+	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);*/
 
 	FOnTimelineFloat WallRunProgress;
 	WallRunProgress.BindUFunction(this, FName("UpdateWallRun"));
-	WallRunTimeline->AddInterpFloat(DashCurve, WallRunProgress);
+	WallRunTimeline->AddInterpFloat(WalkingRollCurve, WallRunProgress);
 	WallRunTimeline->SetLooping(true);
 
 	FOnTimelineFloat WalkingProgress;
@@ -64,9 +66,6 @@ void AInputCharacter::BeginPlay()
 	WalkingTimeline->AddInterpFloat(WalkingRollCurve, WalkingProgress);*/
 	WalkingTimeline->SetLooping(true);
 	WalkingTimeline->PlayFromStart();
-	
-
-	DashSpeedCoefficient = GetSpeedCoefficient();
 
 	BaseAirControl = GetCharacterMovement()->AirControl;
 }
@@ -101,9 +100,15 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AInputCharacter::Move);
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
-		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::StartDash);  //Dash on
+		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::Dash);  //Dash on
 	}
 }
+
+void AInputCharacter::Dash()
+{
+	DashComponent->StartDash();
+}
+
 
 //Move character according to the input
 void AInputCharacter::Move(const FInputActionValue& InputValue)
@@ -135,68 +140,8 @@ void AInputCharacter::Look(const FInputActionValue& InputValue)
 void AInputCharacter::Jump()
 {
 	Super::Jump();
-} 
-
-#pragma region Dash
-//_____________________________________________________________________________________________________
-void AInputCharacter::StartDash()
-{
-	if (bDashing)
-		return;
-
-	//GetCharacterMovement()->StopMovementImmediately();
-	bDashing = true;
-
-	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
-	
-
-	const FRotator Rotation = Controller->GetControlRotation();
-	const FRotator YawRotation(0, Rotation.Yaw, 0);
-	
-	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-
-	DashVector = (ForwardDirection * MoveInputVector.Y + RightDirection * MoveInputVector.X).GetSafeNormal();
-	
-	//Timeline start
-	DashTimeline->PlayFromStart();
 }
 
-void AInputCharacter::DashTimelineProgress(float Value)
-{
-	LaunchCharacter(DashVector * Value * DashSpeedCoefficient, true, true);
-}
-
-void AInputCharacter::OnDashFinished()
-{
-	LaunchCharacter(DashVector * DashDistance * 50.f, true, true);
-	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
-
-	GetWorldTimerManager().SetTimer(DashHandle, this, &AInputCharacter::ResetDashCooldown, DashCooldown, false);
-}
-
-void AInputCharacter::ResetDashCooldown()
-{
-	bDashing = false;
-}
-
-float AInputCharacter::GetSpeedCoefficient() const
-{
-	float MinTime, MaxTime;
-	DashCurve->GetTimeRange(MinTime, MaxTime);
-
-	float step = (MaxTime - MinTime) / 200.f;
-	float ApproximateCurveS = 0.f;
-	for (float i = MinTime; i < MaxTime; i += step)
-	{
-		ApproximateCurveS += DashCurve->GetFloatValue(i + step) * step;
-	}
-
-	return DashDistance / ApproximateCurveS / DashDuration * 100.f;
-}
-
-//_____________________________________________________________________________________________________
-#pragma endregion Dash
 
 void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
@@ -361,7 +306,7 @@ void AInputCharacter::UpdateLocationLagPos()
 	FVector NewLocationLagPos = FVector(-2 * ForwardVelocity / BaseWalkSpeed, -2 * RightVelocity / BaseWalkSpeed, -2 * UpVelocity /GetCharacterMovement()->JumpZVelocity);
 	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 6.f);
 
-	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 1.5f / FVector::Dist(LocationLagPos, NewLocationLagPos));
+	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 9.f); //FVector::Dist(LocationLagPos, NewLocationLagPos)
 }
 
 FVector AInputCharacter::GetLocationLagPos()
@@ -439,4 +384,26 @@ void AInputCharacter::OnJumped_Implementation()
 	Super::OnJumped_Implementation();
 
 	GetWorld()->GetTimerManager().ClearTimer(CoyoteTimerHandle);
+}
+
+
+
+void AInputCharacter::OnDashStart()
+{
+	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+}
+
+void AInputCharacter::OnDashEnd()
+{
+	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
+}
+
+FVector AInputCharacter::GetMoveDirection() const
+{
+	return FVector();
+}
+
+FVector2D AInputCharacter::GetInputDirection() const
+{
+	return MoveInputVector;
 }

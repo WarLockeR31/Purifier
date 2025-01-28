@@ -72,11 +72,11 @@ float UHandSwayComponent::HandsSway()
 	CameraRotationCur = Owner->Controller->GetControlRotation();
 	FRotator Delta = UKismetMathLibrary::NormalizedDeltaRotator(CameraRotationCur, CameraRotationPrev);
 
-	float Roll =  FMath::Clamp(Delta.Pitch * -1.f, -5.f, 5.f);
-	float Yaw = FMath::Clamp(Delta.Yaw, -5.f, 5.f);
+	float Roll =  FMath::Clamp(Delta.Pitch * -1.f, -3.f, 3.f);
+	float Yaw = FMath::Clamp(Delta.Yaw, -3.f, 3.f);
 	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), Roll, Yaw));
 	FRotator Sway = FRotator(Roll, 0.f, Yaw);
-	CameraRotationRate = FMath::RInterpTo(CameraRotationRate, Sway, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 6.f);
+	CameraRotationRate = FMath::RInterpTo(CameraRotationRate, Sway, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 12.f);
 
 
 	float CameraRotationOffsetX = FMath::Lerp(-10.f, 10.f, (float)UKismetMathLibrary::NormalizeToRange(CameraRotationRate.Roll, -5.f, 5.f));

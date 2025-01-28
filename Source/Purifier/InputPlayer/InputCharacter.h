@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Purifier/Dashable.h"
+#include "Purifier/BaseDashComponent.h"
 #include "InputActionValue.h"
+
 
 #include "InputCharacter.generated.h"
 
@@ -21,9 +24,10 @@ enum class EWallRunSide : uint8 {
 //};
 
 class UHandSwayComponent;
+class UDashComponent;
 
 UCLASS()
-class PURIFIER_API AInputCharacter : public ACharacter
+class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 {
 	GENERATED_BODY()
 
@@ -34,28 +38,11 @@ class PURIFIER_API AInputCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "EnhancedInput")
 	FVector2D MoveInputVector;
 
-	
+	UPROPERTY(VisibleAnywhere, Category = "Dash")
+	UBaseDashComponent* DashComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
 	UHandSwayComponent* HandSwayComponent;
-
-	
-#pragma region Dash
-	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	FTimerHandle DashHandle;
-
-	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	FVector DashVector;
-
-	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	float DashSpeedCoefficient;
-
-	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	bool bDashing;
-
-	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	class UTimelineComponent* DashTimeline;
-#pragma endregion Dash
 
 #pragma region WallRun
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
@@ -92,21 +79,6 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputAction* DashAction;
 #pragma endregion Input
-
-#pragma region Dash
-	UPROPERTY(EditAnywhere, Category = "Dash") 
-	float DashDistance;
-
-	UPROPERTY(EditAnywhere, Category = "Dash") 
-	float DashDuration;
-
-	UPROPERTY(EditAnywhere, Category = "Dash") 
-	float DashCooldown;
-
-	//Dash curve
-	UPROPERTY(EditAnywhere, Category = "Dash")
-	UCurveFloat* DashCurve;
-#pragma endregion Dash
 
 #pragma region Walking
 
@@ -168,16 +140,8 @@ protected:
 	void Move(const FInputActionValue& InputValue);
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
-
-	//Dash
-	void StartDash();
-	UFUNCTION()
-	void DashTimelineProgress(float Value);
-	UFUNCTION()
-	void OnDashFinished();
-	void ResetDashCooldown();
-	//Integrating curve
-	float GetSpeedCoefficient() const;
+	void Dash();
+	
 
 	//WallRun trigger
 	UFUNCTION() 
@@ -209,4 +173,10 @@ protected:
 public:
 	void UpdateLocationLagPos(); //???
 	FVector GetLocationLagPos();
+
+	virtual void OnDashStart() override;
+	virtual void OnDashEnd() override;
+
+	virtual FVector GetMoveDirection() const override;  // Метод для получения направления рывка.
+	virtual FVector2D GetInputDirection() const override;
 };
