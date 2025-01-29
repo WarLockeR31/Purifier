@@ -34,6 +34,8 @@ AInputCharacter::AInputCharacter()
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	
 	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);  //WallRun on
+	
+	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
 }
 
 // Called when the game starts or when spawned
@@ -277,7 +279,13 @@ void AInputCharacter::UpdateWalkingHandSway(float Value)
 	WalkAnimTilt = FRotator(0.f, FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime)), 0.f);
 
 	float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
-	WalkAnimAlpha = GetCharacterMovement()->IsFalling() ? 0.f : NormalizedVelocity;
+	//WalkAnimAlpha = GetCharacterMovement()->IsFalling() ? 0.f : NormalizedVelocity;
+
+	WalkAnimAlpha = (InputCharacterMovementComponent->IsFalling() ||
+					(InputCharacterMovementComponent->MovementMode == MOVE_Custom &&
+					InputCharacterMovementComponent->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Dash)))
+					? 0.f
+					: NormalizedVelocity;
 
 	WalkingTimeline->SetPlayRate(FMath::Lerp(0.f, 1.65f, WalkAnimAlpha));
 	UpdateLocationLagPos();
@@ -391,10 +399,12 @@ void AInputCharacter::OnJumped_Implementation()
 void AInputCharacter::OnDashStart()
 {
 	GetCharacterMovement()->BrakingFrictionFactor = 0.f;
+	InputCharacterMovementComponent->StartDash();
 }
 
 void AInputCharacter::OnDashEnd()
 {
+	InputCharacterMovementComponent->StopDash();
 	GetCharacterMovement()->BrakingFrictionFactor = 2.f;
 }
 

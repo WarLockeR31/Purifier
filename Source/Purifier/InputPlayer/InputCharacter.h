@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Purifier/Dashable.h"
 #include "Purifier/BaseDashComponent.h"
+#include "Purifier/InputCharacterMovementComponent.h"
 #include "InputActionValue.h"
 
 
@@ -43,6 +44,9 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
 	UHandSwayComponent* HandSwayComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Movement")
+	UInputCharacterMovementComponent* InputCharacterMovementComponent;
 
 #pragma region WallRun
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
