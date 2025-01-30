@@ -4,9 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "Purifier/Dashable.h"
-#include "Purifier/BaseDashComponent.h"
-#include "Purifier/InputCharacterMovementComponent.h"
+#include "Purifier/Dash/Dashable.h"
+#include "Purifier/Dash/BaseDashComponent.h"
+#include "InputCharacterMovementComponent.h"
 #include "InputActionValue.h"
 
 

@@ -74,7 +74,6 @@ float UHandSwayComponent::HandsSway()
 
 	float Roll =  FMath::Clamp(Delta.Pitch * -1.f, -3.f, 3.f);
 	float Yaw = FMath::Clamp(Delta.Yaw, -3.f, 3.f);
-	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), Roll, Yaw));
 	FRotator Sway = FRotator(Roll, 0.f, Yaw);
 	CameraRotationRate = FMath::RInterpTo(CameraRotationRate, Sway, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 12.f);
 
@@ -95,7 +94,6 @@ void UHandSwayComponent::AerialHandSway()
 
 	AerialTilt = FMath::RInterpTo(AerialTilt, NewAerialTilt, GetWorld()->GetDeltaSeconds(), InterpSpeed);
 	AerialOffset = FMath::VInterpTo(AerialOffset, NewAerialOffset, GetWorld()->GetDeltaSeconds(), InterpSpeed);
-	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f"), AerialTilt.Yaw, AerialOffset.X));
 }
 
 

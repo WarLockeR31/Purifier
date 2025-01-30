@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Purifier/InputPlayer/InputCharacter.h"
+#include "InputCharacter.h"
 #include <EnhancedInputComponent.h>
 #include <EnhancedInputSubsystems.h>
 
@@ -11,8 +11,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include <Kismet/KismetMathLibrary.h>
-#include <Purifier/BaseDashComponent.h>
-#include <Purifier/InputPlayer/HandSwayComponent.h>
+#include <Purifier/Dash/BaseDashComponent.h>
+#include <Purifier/InputCharacter/HandSwayComponent.h>
 
 
 // Sets default values
@@ -22,7 +22,6 @@ AInputCharacter::AInputCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 
 	Camera = CreateDefaultSubobject<UCameraComponent>("Camera");
-	//GetMesh()->SetupAttachment(Camera);
 	Camera->SetupAttachment(RootComponent);
 	Camera->bUsePawnControlRotation = true;
 
@@ -47,15 +46,6 @@ void AInputCharacter::BeginPlay()
 	DashComponent = FindComponentByClass<UBaseDashComponent>();
 	GetCharacterMovement()->MaxAcceleration = 100000.f;
 
-	/*FOnTimelineFloat DashProgress;
-	DashProgress.BindUFunction(this, FName("DashTimelineProgress"));
-	DashTimeline->AddInterpFloat(DashCurve, DashProgress);
-	DashTimeline->SetPlayRate(1.f / DashDuration);
-
-	FOnTimelineEvent TimelineFinishedCallback;
-	TimelineFinishedCallback.BindUFunction(this, FName("OnDashFinished"));
-	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);*/
-
 	FOnTimelineFloat WallRunProgress;
 	WallRunProgress.BindUFunction(this, FName("UpdateWallRun"));
 	WallRunTimeline->AddInterpFloat(WalkingRollCurve, WallRunProgress);
@@ -64,8 +54,6 @@ void AInputCharacter::BeginPlay()
 	FOnTimelineFloat WalkingProgress;
 	WalkingProgress.BindUFunction(this, FName("UpdateWalkingHandSway"));
 	WalkingTimeline->AddInterpFloat(WalkingLeftRightCurve, WalkingProgress);
-	/*WalkingTimeline->AddInterpFloat(WalkingUpDownCurve, WalkingProgress);
-	WalkingTimeline->AddInterpFloat(WalkingRollCurve, WalkingProgress);*/
 	WalkingTimeline->SetLooping(true);
 	WalkingTimeline->PlayFromStart();
 
@@ -76,9 +64,6 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	//UpdateLocationLagPos();
-	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), LocationLagPos.X, LocationLagPos.Y, LocationLagPos.Z));
-	//GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, FString::Printf(TEXT("%f   %f   %f"), GetVelocity().X, GetVelocity().Y, GetVelocity().Z));
 }
 
 // Called to bind functionality to input
@@ -289,8 +274,6 @@ void AInputCharacter::UpdateWalkingHandSway(float Value)
 
 	WalkingTimeline->SetPlayRate(FMath::Lerp(0.f, 1.65f, WalkAnimAlpha));
 	UpdateLocationLagPos();
-
-	
 }
 
 
@@ -310,8 +293,7 @@ void AInputCharacter::UpdateLocationLagPos()
 	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
 	float UpVelocity = FVector::DotProduct(Velocity, GetActorUpVector());
 
-	//FVector NewLocationLagPos = 2 * FVector(RightVelocity / BaseWalkSpeed, ForwardVelocity / -BaseWalkSpeed, UpVelocity / -GetCharacterMovement()->JumpZVelocity);
-	FVector NewLocationLagPos = FVector(-2 * ForwardVelocity / BaseWalkSpeed, -2 * RightVelocity / BaseWalkSpeed, -2 * UpVelocity /GetCharacterMovement()->JumpZVelocity);
+	FVector NewLocationLagPos = -2 * FVector(ForwardVelocity / BaseWalkSpeed, RightVelocity / BaseWalkSpeed, UpVelocity / GetCharacterMovement()->JumpZVelocity);
 	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 6.f);
 
 	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 9.f); //FVector::Dist(LocationLagPos, NewLocationLagPos)
