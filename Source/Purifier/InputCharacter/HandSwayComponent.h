@@ -15,10 +15,13 @@ class PURIFIER_API UHandSwayComponent : public UActorComponent
 	GENERATED_BODY()
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
-	AInputCharacter* Owner;
+	AInputCharacter* OwnerInputCharacter;
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
-	USkeletalMeshComponent* hands;
+	USkeletalMeshComponent* HandsMesh;
+
+	UPROPERTY()
+	UInputCharacterMovementComponent* InputCharacterMovementComponent;
 
 protected:
 
@@ -49,6 +52,39 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "HandsSway")
 	float MaxDownPitch = 10.f;
 
+#pragma region Walking
+
+	UPROPERTY(VisibleAnywhere, Category = "Walking")
+	class UTimelineComponent* WalkingTimeline;
+
+	UPROPERTY(EditAnywhere, Category = "Walking")
+	UCurveFloat* WalkingLeftRightCurve;
+
+	UPROPERTY(EditAnywhere, Category = "Walking")
+	UCurveFloat* WalkingUpDownCurve;
+
+	UPROPERTY(EditAnywhere, Category = "Walking")
+	UCurveFloat* WalkingRollCurve;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	FVector WalkAnimOffset;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	FRotator WalkAnimTilt;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	float WalkAnimAlpha;
+
+#pragma endregion Walking
+
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float MaxWalkSpeed;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	FVector LocationLagPos;
+
+	
+
 public:
 	
 
@@ -66,9 +102,13 @@ protected:
 
 	void AerialHandSway();
 
+	UFUNCTION()
+	void UpdateWalkingHandSway(float Value);
+
 public:	
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-		
+public:
+	void UpdateLocationLagPos(); //???
 };

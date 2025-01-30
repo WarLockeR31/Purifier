@@ -29,7 +29,6 @@ AInputCharacter::AInputCharacter()
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 
-	WalkingTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WalkingTimeline"));
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	
 	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);  //WallRun on
@@ -48,14 +47,8 @@ void AInputCharacter::BeginPlay()
 
 	FOnTimelineFloat WallRunProgress;
 	WallRunProgress.BindUFunction(this, FName("UpdateWallRun"));
-	WallRunTimeline->AddInterpFloat(WalkingRollCurve, WallRunProgress);
+	WallRunTimeline->AddInterpFloat(WallRunCurve, WallRunProgress);
 	WallRunTimeline->SetLooping(true);
-
-	FOnTimelineFloat WalkingProgress;
-	WalkingProgress.BindUFunction(this, FName("UpdateWalkingHandSway"));
-	WalkingTimeline->AddInterpFloat(WalkingLeftRightCurve, WalkingProgress);
-	WalkingTimeline->SetLooping(true);
-	WalkingTimeline->PlayFromStart();
 
 	BaseAirControl = GetCharacterMovement()->AirControl;
 }
@@ -253,55 +246,13 @@ void AInputCharacter::EndWallRun()
 //_____________________________________________________________________________________________________
 #pragma endregion WallRun
 
-void AInputCharacter::UpdateWalkingHandSway(float Value)
+
+
+
+
+UInputCharacterMovementComponent* AInputCharacter::GetInputCharacterMovement()
 {
-	float CurTLTime = WalkingTimeline->GetPlaybackPosition();
-
-	float WalkAnomOffsetX = FMath::Lerp(-0.4f, 0.4f, WalkingLeftRightCurve->GetFloatValue(CurTLTime));
-	float WalkAnomOffsetZ = FMath::Lerp(-0.35f, 0.2f, WalkingUpDownCurve->GetFloatValue(CurTLTime));
-	WalkAnimOffset.Set(WalkAnomOffsetX, 0.f, WalkAnomOffsetZ);
-
-	WalkAnimTilt = FRotator(0.f, FMath::Lerp(1.f, -1.f, WalkingRollCurve->GetFloatValue(CurTLTime)), 0.f);
-
-	float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
-	//WalkAnimAlpha = GetCharacterMovement()->IsFalling() ? 0.f : NormalizedVelocity;
-
-	WalkAnimAlpha = (InputCharacterMovementComponent->IsFalling() ||
-					(InputCharacterMovementComponent->MovementMode == MOVE_Custom &&
-					InputCharacterMovementComponent->CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Dash)))
-					? 0.f
-					: NormalizedVelocity;
-
-	WalkingTimeline->SetPlayRate(FMath::Lerp(0.f, 1.65f, WalkAnimAlpha));
-	UpdateLocationLagPos();
-}
-
-
-void AInputCharacter::UpdateLocationLagPos()
-{
-	const FVector Velocity = this->GetVelocity();  
-
-	const FRotator Rotation = Controller->GetControlRotation();
-	const FRotator YawRotation(0, Rotation.Yaw, 0);
-
-	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-	const FVector UpDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Z);
-	
-
-	float ForwardVelocity = FVector::DotProduct(Velocity, ForwardDirection);
-	float RightVelocity = FVector::DotProduct(Velocity, RightDirection);
-	float UpVelocity = FVector::DotProduct(Velocity, GetActorUpVector());
-
-	FVector NewLocationLagPos = -2 * FVector(ForwardVelocity / BaseWalkSpeed, RightVelocity / BaseWalkSpeed, UpVelocity / GetCharacterMovement()->JumpZVelocity);
-	NewLocationLagPos = NewLocationLagPos.GetClampedToSize(0.f, 6.f);
-
-	LocationLagPos = FMath::VInterpTo(LocationLagPos, NewLocationLagPos, GetWorld()->GetDeltaSeconds(), (1.f / GetWorld()->GetDeltaSeconds()) / 9.f); //FVector::Dist(LocationLagPos, NewLocationLagPos)
-}
-
-FVector AInputCharacter::GetLocationLagPos()
-{
-	return LocationLagPos;
+	return InputCharacterMovementComponent;
 }
 
 void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
@@ -310,7 +261,7 @@ void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint
 
 	if (GetCharacterMovement()->IsFalling())
 	{
-		float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, BaseWalkSpeed);
+		float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, GetCharacterMovement()->MaxWalkSpeed);
 		float CoyoteTimeModifier = FMath::Lerp(0.25f, 1.f, FMath::Clamp(NormalizedVelocity, 0.f, 1.f));
 
 		float CorrecterCoyoteTime = CoyoteTime * CoyoteTimeModifier;

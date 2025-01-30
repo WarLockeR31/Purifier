@@ -63,6 +63,9 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	class UTimelineComponent* WallRunTimeline;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	UCurveFloat* WallRunCurve;
 #pragma endregion WallRun
 
 protected:
@@ -84,36 +87,9 @@ protected:
 	class UInputAction* DashAction;
 #pragma endregion Input
 
-#pragma region Walking
 
-	UPROPERTY(VisibleAnywhere, Category = "Walking")
-	class UTimelineComponent* WalkingTimeline;
 
-	UPROPERTY(EditAnywhere, Category = "Walking")
-	UCurveFloat* WalkingLeftRightCurve;
-
-	UPROPERTY(EditAnywhere, Category = "Walking")
-	UCurveFloat* WalkingUpDownCurve;
-
-	UPROPERTY(EditAnywhere, Category = "Walking")
-	UCurveFloat* WalkingRollCurve;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
-	FVector WalkAnimOffset;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
-	FRotator WalkAnimTilt;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
-	float WalkAnimAlpha;
-
-#pragma endregion Walking
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
-	FVector LocationLagPos;
-
-	UPROPERTY(EditAnywhere, Category = "Movement")
-	float BaseWalkSpeed;
+	
 
 	UPROPERTY(EditAnywhere, Category = "Movement")
 	float CoyoteTime;
@@ -161,8 +137,7 @@ protected:
 	void UpdateWallRun();
 	void EndWallRun();
 
-	UFUNCTION()
-	void UpdateWalkingHandSway(float Value);
+	
 
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode) override;\
@@ -175,8 +150,7 @@ protected:
 	void OnCoyoteTimePassed();
 
 public:
-	void UpdateLocationLagPos(); //???
-	FVector GetLocationLagPos();
+	UInputCharacterMovementComponent* GetInputCharacterMovement();
 
 	virtual void OnDashStart() override;
 	virtual void OnDashEnd() override;
