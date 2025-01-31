@@ -12,20 +12,11 @@
 
 #include "InputCharacter.generated.h"
 
-UENUM(BlueprintType)
-enum class EWallRunSide : uint8 {
-	Left = 0 UMETA(DisplayName = "LEFT"),
-	Right = 1  UMETA(DisplayName = "RIGHT"),
-};
 
-//UENUM(BlueprintType)
-//enum class EWallRunEndReason : uint8 {
-//	FallOffWall = 0 UMETA(DisplayName = "FallOffWall"),
-//	JumpedOffWall = 1  UMETA(DisplayName = "JumpedOffWall"),
-//};
 
 class UHandSwayComponent;
 class UDashComponent;
+class UWallRunComponent;
 
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
@@ -45,28 +36,11 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
 	UHandSwayComponent* HandSwayComponent;
 
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	UWallRunComponent* WallRunComponent;
+
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
 	UInputCharacterMovementComponent* InputCharacterMovementComponent;
-
-#pragma region WallRun
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	FVector WallRunDirection;
-
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	bool bWallRunning;
-
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	EWallRunSide WallRunSide;
-
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	float BaseAirControl;
-
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	class UTimelineComponent* WallRunTimeline;
-
-	UPROPERTY(EditAnywhere, Category = "WallRun")
-	UCurveFloat* WallRunCurve;
-#pragma endregion WallRun
 
 protected:
 
@@ -123,20 +97,7 @@ protected:
 	void Dash();
 	
 
-	//WallRun trigger
-	UFUNCTION() 
-	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
-	//WallRun helper
-	bool SurfaceIsWallRunnable(const FVector SurfaceNormal) const;
-	//WallRun helper
-	bool AreRequiredKeysDown() const;
-
-	//WallRun
-	void StartWallRun();
-	UFUNCTION()
-	void UpdateWallRun();
-	void EndWallRun();
-
+	
 	
 
 

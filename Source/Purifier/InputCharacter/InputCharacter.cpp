@@ -7,12 +7,13 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/TimelineComponent.h"
+
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include <Kismet/KismetMathLibrary.h>
 #include <Purifier/Dash/BaseDashComponent.h>
 #include <Purifier/InputCharacter/HandSwayComponent.h>
+#include "WallRunComponent.h"
 
 
 // Sets default values
@@ -28,10 +29,7 @@ AInputCharacter::AInputCharacter()
 	GetMesh()->SetupAttachment(Camera);
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
-
-	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
-	
-	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AInputCharacter::OnCollisionHit);  //WallRun on
+	WallRunComponent = CreateDefaultSubobject<UWallRunComponent>("WallRun");
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
 }
@@ -44,13 +42,6 @@ void AInputCharacter::BeginPlay()
 	
 	DashComponent = FindComponentByClass<UBaseDashComponent>();
 	GetCharacterMovement()->MaxAcceleration = 100000.f;
-
-	FOnTimelineFloat WallRunProgress;
-	WallRunProgress.BindUFunction(this, FName("UpdateWallRun"));
-	WallRunTimeline->AddInterpFloat(WallRunCurve, WallRunProgress);
-	WallRunTimeline->SetLooping(true);
-
-	BaseAirControl = GetCharacterMovement()->AirControl;
 }
 
 // Called every frame
@@ -89,12 +80,11 @@ void AInputCharacter::Dash()
 	DashComponent->StartDash();
 }
 
-
 //Move character according to the input
 void AInputCharacter::Move(const FInputActionValue& InputValue)
 {
 	MoveInputVector = InputValue.Get<FVector2D>();
-	if (IsValid(Controller) && !bWallRunning)
+	if (IsValid(Controller) /*&& !bWallRunning */)
 	{
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -123,128 +113,9 @@ void AInputCharacter::Jump()
 }
 
 
-void AInputCharacter::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
-	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
-{
-	if (bWallRunning || !SurfaceIsWallRunnable(Hit.ImpactNormal))
-	{
-		return;
-	}
-
-	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
-	{
-		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
-	}
-	else
-	{
-		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
-	}
-
-	if (AreRequiredKeysDown())
-	{
-		StartWallRun();
-	}
-}
-
-#pragma region WallRun
-//_____________________________________________________________________________________________________
-bool AInputCharacter::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
-{
-	if (SurfaceNormal.Z < -0.05f)
-	{
-		return false;
-	}
-
-	FVector SurfaceNormalProjection = FVector(SurfaceNormal.X, SurfaceNormal.Y, 0).GetSafeNormal();
-	float angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(SurfaceNormalProjection, SurfaceNormal)));
-
-	return angle < GetCharacterMovement()->GetWalkableFloorAngle();
-}
-
-bool AInputCharacter::AreRequiredKeysDown() const
-{
-	if (MoveInputVector.Y < 0.1f)
-	{ 
-		return false;
-	}
-
-	return MoveInputVector.X > 0.1f  && (WallRunSide == EWallRunSide::Right) || 
-		   MoveInputVector.X < -0.1f && (WallRunSide == EWallRunSide::Left);
-}
-
-void AInputCharacter::StartWallRun()
-{
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("StartedWallRun"));
-
-	bWallRunning = true;
-	GetCharacterMovement()->StopMovementImmediately();
-	GetCharacterMovement()->AirControl = 1.f;
-	GetCharacterMovement()->GravityScale = 0.f;
-	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 1.f));
-	WallRunTimeline->Play();
-}
-
-void AInputCharacter::UpdateWallRun()
-{
-	if (!AreRequiredKeysDown())
-	{
-		EndWallRun();
-		return;
-	}
-
-	FHitResult Hit;
-	TArray<AActor*> actorsToIgnore;
-	actorsToIgnore.Add(this);
-	FVector EndLocation = GetActorLocation() + WallRunDirection.Cross(FVector(0.f, 0.f, WallRunSide == EWallRunSide::Left ? 1.f : -1.f)) * 90.f;
-		
-	if (!UKismetSystemLibrary::LineTraceSingle(GetWorld(), GetActorLocation(), EndLocation, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, actorsToIgnore, EDrawDebugTrace::ForOneFrame, Hit, true))
-	{
-		EndWallRun();
-		return;
-	}
-
-	if (GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
-	{
-		if (WallRunSide != EWallRunSide::Left)
-		{
-			EndWallRun();
-			return;
-		}
-
-		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
-	}
-	else
-	{
-		if (WallRunSide != EWallRunSide::Right)
-		{
-			EndWallRun();
-			return;
-		}
-
-		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f)); 
-		
-	}
-
-	LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 2000.f, true, true);
-}
-
-void AInputCharacter::EndWallRun()
-{
-	WallRunTimeline->Stop();
-	GetCharacterMovement()->SetPlaneConstraintNormal(FVector(0.f, 0.f, 0.f));
-	GetCharacterMovement()->GravityScale = 1.f;
-	GetCharacterMovement()->AirControl = BaseAirControl;
-	bWallRunning = false;
-	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
-}
 
 
-//_____________________________________________________________________________________________________
-#pragma endregion WallRun
+
 
 
 
