@@ -6,6 +6,8 @@
 #include "InputCharacter.h"
 #include <Kismet/KismetSystemLibrary.h>
 #include "InputCharacterMovementComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/CapsuleComponent.h"
 
 // Sets default values for this component's properties
 UWallRunComponent::UWallRunComponent()
@@ -15,6 +17,8 @@ UWallRunComponent::UWallRunComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
+	//WallRunCollider = (UPrimitiveComponent*)OwnerInputCharacter->GetCapsuleComponent();
+	
 }
 
 
@@ -23,11 +27,22 @@ void UWallRunComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	WallRunCollider->OnComponentHit.AddDynamic(this, &UWallRunComponent::OnCollisionHit);  //WallRun on
+	// Настраиваем триггерную зону
+	
+	WallRunCollider->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	WallRunCollider->SetCollisionObjectType(ECollisionChannel::ECC_WorldDynamic);
+	WallRunCollider->SetCollisionResponseToAllChannels(ECR_Ignore);
+	WallRunCollider->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap); // Реагирует только на стены
+
+	WallRunCollider->OnComponentBeginOverlap.AddDynamic(this, &UWallRunComponent::OnWallTriggerBeginOverlap);
+	//WallRunCollider->OnComponentHit.AddDynamic(this, &UWallRunComponent::OnCollisionHit);  //WallRun on
 
 	if (AInputCharacter* OwnerCast = Cast<AInputCharacter>(GetOwner()))
 	{
 		OwnerInputCharacter = OwnerCast;
+		InputCharacterMovementComponent = OwnerInputCharacter->GetInputCharacterMovement();
+		//WallRunCollider->SetupAttachment(OwnerInputCharacter->GetRootComponent());
+		WallRunCollider->AttachToComponent(OwnerInputCharacter->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 	}
 	else
 	{
@@ -52,35 +67,102 @@ void UWallRunComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	// ...
 }
 
-void UWallRunComponent::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
-	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void UWallRunComponent::OnWallTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (bWallRunning || !SurfaceIsWallRunnable(Hit.ImpactNormal))
+
+	//FHitResult Hit;
+	
+	//UKismetSystemLibrary::LineTraceSingle(GetWorld(), OwnerInputCharacter->GetActorLocation(), SweepResult.ImpactPoint, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, actorsToIgnore, EDrawDebugTrace::Persistent, Hit, true);
+
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Overlap"));
+	//FString BoolText = bFromSweep ? TEXT("true") : TEXT("false");
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("bFromSweep: %s"), *BoolText));
+
+	if (bWallRunning)
 	{
 		return;
 	}
 
-	if (OwnerInputCharacter->GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
+	TArray<FHitResult> OutHits;
+	float DistanceTrace = 200.f;
+	FVector StartTrace = WallRunCollider->GetComponentLocation();
+	FVector EndTrace = (OwnerInputCharacter->GetVelocity().GetSafeNormal() * DistanceTrace + StartTrace);
+	TArray<AActor*> actorsToIgnore;
+	actorsToIgnore.Add(OwnerInputCharacter);
+
+	bool bIsHitted = UKismetSystemLibrary::CapsuleTraceMulti(
+		GetWorld(),
+		StartTrace,
+		EndTrace,
+		WallRunCollider->GetScaledCapsuleRadius(),
+		WallRunCollider->GetScaledCapsuleHalfHeight(),
+		UEngineTypes::ConvertToTraceType(ECC_WorldStatic),
+		false,
+		actorsToIgnore,
+		EDrawDebugTrace::ForDuration,
+		OutHits,
+		true
+	);
+
+	FHitResult* Hit = OutHits.FindByPredicate([OtherActor](const FHitResult& Hit)
+	{
+		return Hit.GetActor() == OtherActor;
+	});
+
+	if (bWallRunning || !SurfaceIsWallRunnable(Hit->ImpactNormal))
+	{
+		return;
+	}
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("1"));
+	if (OwnerInputCharacter->GetActorRightVector().Dot(Hit->ImpactNormal) > 0)
 	{
 		WallRunSide = EWallRunSide::Left;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+		WallRunDirection = Hit->ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
 	}
 	else
 	{
 		WallRunSide = EWallRunSide::Right;
-		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+		WallRunDirection = Hit->ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
 	}
 
 	if (AreRequiredKeysDown())
 	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("2"));
 		StartWallRun();
 	}
 }
+
+//void UWallRunComponent::OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+//	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+//{
+//	if (bWallRunning || !SurfaceIsWallRunnable(Hit.ImpactNormal))
+//	{
+//		return;
+//	}
+//
+//	if (OwnerInputCharacter->GetActorRightVector().Dot(Hit.ImpactNormal) > 0)
+//	{
+//		WallRunSide = EWallRunSide::Left;
+//		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, 1.f));
+//	}
+//	else
+//	{
+//		WallRunSide = EWallRunSide::Right;
+//		WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, -1.f));
+//	}
+//
+//	if (AreRequiredKeysDown())
+//	{
+//		StartWallRun();
+//	}
+//}
 
 #pragma region WallRun
 //_____________________________________________________________________________________________________
 bool UWallRunComponent::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
 {
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Normal.z: %.2f"), SurfaceNormal.Z));
 	if (SurfaceNormal.Z < -0.05f)
 	{
 		return false;
@@ -88,7 +170,7 @@ bool UWallRunComponent::SurfaceIsWallRunnable(const FVector SurfaceNormal) const
 
 	FVector SurfaceNormalProjection = FVector(SurfaceNormal.X, SurfaceNormal.Y, 0).GetSafeNormal();
 	float angle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(SurfaceNormalProjection, SurfaceNormal)));
-
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), angle));
 	return angle < InputCharacterMovementComponent->GetWalkableFloorAngle();
 }
 

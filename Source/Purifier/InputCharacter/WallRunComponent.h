@@ -53,7 +53,7 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	UCurveFloat* WallRunCurve;
 	
 	UPROPERTY(EditAnywhere, Category = "WallRun")
-	UPrimitiveComponent* WallRunCollider;
+	UCapsuleComponent* WallRunCollider;
 
 public:	
 	// Sets default values for this component's properties
@@ -68,6 +68,15 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 		
+	UFUNCTION()
+	void OnWallTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent,
+		AActor* OtherActor,
+		UPrimitiveComponent* OtherComp,
+		int32 OtherBodyIndex,
+		bool bFromSweep,
+		const FHitResult& SweepResult);
+
+
 	//WallRun trigger
 	UFUNCTION()
 	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
