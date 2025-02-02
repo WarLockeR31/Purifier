@@ -11,11 +11,6 @@
 
 #include "WallRunComponent.generated.h"
 
-UENUM(BlueprintType)
-enum class EWallRunSide : uint8 {
-	Left = 0 UMETA(DisplayName = "LEFT"),
-	Right = 1  UMETA(DisplayName = "RIGHT"),
-};
 
 //UENUM(BlueprintType)
 //enum class EWallRunEndReason : uint8 {
@@ -34,6 +29,9 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	UPROPERTY()
 	UInputCharacterMovementComponent* InputCharacterMovementComponent;
 
+	UPROPERTY()
+	AController* OwnerContoller;
+
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	FVector WallRunDirection;
 
@@ -41,19 +39,32 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	bool bWallRunning;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	EWallRunSide WallRunSide;
+	float BaseAirControl;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	float BaseAirControl;
+	bool bIsWallRunLeft;
+
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	UCapsuleComponent* WallRunCollider;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	class UTimelineComponent* WallRunTimeline;
 
 	UPROPERTY(EditAnywhere, Category = "WallRun")
 	UCurveFloat* WallRunCurve;
-	
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	class UTimelineComponent* WallRunAttachTimeline;
+
 	UPROPERTY(EditAnywhere, Category = "WallRun")
-	UCapsuleComponent* WallRunCollider;
+	UCurveFloat* WallRunAttachCurve;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	float WallRunAttachDuration;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	float WallRunCameraRoll;
 
 public:	
 	// Sets default values for this component's properties
@@ -76,10 +87,7 @@ public:
 		bool bFromSweep,
 		const FHitResult& SweepResult);
 
-
-	//WallRun trigger
 	UFUNCTION()
-	void OnCollisionHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 	//WallRun helper
 	bool SurfaceIsWallRunnable(const FVector SurfaceNormal) const;
 	//WallRun helper
@@ -91,4 +99,6 @@ public:
 	void UpdateWallRun();
 	void EndWallRun();
 
+	UFUNCTION()
+	void UpdateWallRunAttach(float Roll);
 };
