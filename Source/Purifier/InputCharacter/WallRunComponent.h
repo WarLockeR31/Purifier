@@ -36,7 +36,7 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	FVector WallRunDirection;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	bool bWallRunning;
+	bool bIsWallRunning;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	float BaseAirControl;
@@ -64,7 +64,10 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	float WallRunAttachDuration;
 
 	UPROPERTY(EditAnywhere, Category = "WallRun")
-	float WallRunCameraRoll;
+	float WallRunMaxCameraRoll;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float WallRunMaxAttachmentCameraRoll;
 
 public:	
 	// Sets default values for this component's properties
@@ -101,4 +104,8 @@ public:
 
 	UFUNCTION()
 	void UpdateWallRunAttach(float Roll);
+
+	float CalculateCurrentCameraRoll() const;
+
+	void UpdateWallRunCameraRoll();
 };

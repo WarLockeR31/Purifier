@@ -34,14 +34,12 @@ void UWallRunComponent::BeginPlay()
 	WallRunCollider->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap); // Реагирует только на стены
 
 	WallRunCollider->OnComponentBeginOverlap.AddDynamic(this, &UWallRunComponent::OnWallTriggerBeginOverlap);
-	//WallRunCollider->OnComponentHit.AddDynamic(this, &UWallRunComponent::OnCollisionHit);  //WallRun on
 
 	if (AInputCharacter* OwnerCast = Cast<AInputCharacter>(GetOwner()))
 	{
 		OwnerInputCharacter = OwnerCast;
 		InputCharacterMovementComponent = OwnerInputCharacter->GetInputCharacterMovement();
 		OwnerContoller = OwnerInputCharacter->GetController();
-		//WallRunCollider->SetupAttachment(OwnerInputCharacter->GetRootComponent());
 		WallRunCollider->AttachToComponent(OwnerInputCharacter->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 		BaseAirControl = InputCharacterMovementComponent->AirControl;
 	}
@@ -77,7 +75,7 @@ void UWallRunComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 void UWallRunComponent::OnWallTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (bWallRunning)
+	if (bIsWallRunning)
 		return;
 
 	TArray<FHitResult> OutHits;
@@ -129,7 +127,7 @@ void UWallRunComponent::StartWallRun()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("StartedWallRun"));
 
-	bWallRunning = true;
+	bIsWallRunning = true;
 	InputCharacterMovementComponent->StopMovementImmediately();
 	InputCharacterMovementComponent->AirControl = 1.f;
 	InputCharacterMovementComponent->GravityScale = 0.f;
@@ -160,6 +158,8 @@ void UWallRunComponent::UpdateWallRun()
 
 	WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, bIsWallRunLeft ? 1.f : -1.f));
 
+	UpdateWallRunCameraRoll();
+
 	OwnerInputCharacter->LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 2000.f, true, true);
 }
 
@@ -170,7 +170,7 @@ void UWallRunComponent::EndWallRun()
 	InputCharacterMovementComponent->SetPlaneConstraintNormal(FVector(0.f, 0.f, 0.f));
 	InputCharacterMovementComponent->GravityScale = 1.f;
 	InputCharacterMovementComponent->AirControl = BaseAirControl;
-	bWallRunning = false;
+	bIsWallRunning = false;
 	GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Green, TEXT("EndedWallRun"));
 }
 
@@ -199,8 +199,26 @@ bool UWallRunComponent::AreRequiredKeysDown() const
 
 void UWallRunComponent::UpdateWallRunAttach(float Roll)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), WallRunCameraRoll * Roll));
+
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), WallRunMaxCameraRoll * Roll));
+	WallRunMaxAttachmentCameraRoll = WallRunMaxCameraRoll * (bIsWallRunLeft ? Roll : -Roll);
+	
+	if (bIsWallRunning)
+		return;
+
+	UpdateWallRunCameraRoll();
+}
+
+float UWallRunComponent::CalculateCurrentCameraRoll() const
+{
+	float angleAlpha = FVector::DotProduct(OwnerInputCharacter->GetActorForwardVector(), WallRunDirection.GetSafeNormal());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), WallRunMaxAttachmentCameraRoll * angleAlpha));
+	return WallRunMaxAttachmentCameraRoll * angleAlpha;
+}
+
+void UWallRunComponent::UpdateWallRunCameraRoll()
+{
 	FRotator OwnerControlRotation = OwnerContoller->GetControlRotation();
-	OwnerControlRotation.Roll = WallRunCameraRoll * (bIsWallRunLeft) ? Roll : -Roll;
+	OwnerControlRotation.Roll = CalculateCurrentCameraRoll();
 	OwnerContoller->SetControlRotation(OwnerControlRotation);
 }
