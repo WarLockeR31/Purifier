@@ -10,23 +10,27 @@ UInputCharacterMovementComponent::UInputCharacterMovementComponent()
 
 void UInputCharacterMovementComponent::StartDash()
 {
-    if (MovementMode != MOVE_Custom)
-    {
-        SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Dash));
-    }
+    SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_Dash));
 }
 
 void UInputCharacterMovementComponent::StopDash()
 {
-    if (MovementMode == MOVE_Custom && CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Dash))
-    {
-        SetMovementMode(MOVE_Walking); // Выход из рывка
-    }
+    SetMovementMode(MOVE_Walking); // Выход из рывка
+}
+
+void UInputCharacterMovementComponent::StartWallRun()
+{
+    SetMovementMode(MOVE_Custom, static_cast<uint8>(ECustomMovementMode::CMOVE_WallRun));
+}
+
+void UInputCharacterMovementComponent::StopWallRun()
+{
+    SetMovementMode(MOVE_Falling); // Выход из рывка
 }
 
 void UInputCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations)
 {
-    if (CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Dash))
+    if (CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_Dash) || CustomMovementMode == static_cast<uint8>(ECustomMovementMode::CMOVE_WallRun))
     {
         MoveUpdatedComponent(Velocity * DeltaTime, UpdatedComponent->GetComponentQuat(), true);
     }

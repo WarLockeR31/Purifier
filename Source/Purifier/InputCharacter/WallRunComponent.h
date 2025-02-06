@@ -57,8 +57,26 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
 	class UTimelineComponent* WallRunAttachTimeline;
 
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	class UTimelineComponent* WallRunSlowDownTimeline;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	class UTimelineComponent* WallRunDetachTimeline;
+
 	UPROPERTY(EditAnywhere, Category = "WallRun")
-	UCurveFloat* WallRunAttachCurve;
+	UCurveFloat* WallRunAttachRollCurve;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	UCurveFloat* WallRunAttachAlignSpeedCurve;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	UCurveFloat* WallRunDetachRollCurve;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	UCurveFloat* WallRunSlowDownCurve;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float WallRunSpeedAlpha = 1.f;
 
 	UPROPERTY(EditAnywhere, Category = "WallRun")
 	float WallRunAttachDuration;
@@ -67,7 +85,16 @@ class PURIFIER_API UWallRunComponent : public UActorComponent
 	float WallRunMaxCameraRoll;
 
 	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	float WallRunMaxAttachmentCameraRoll;
+	float WallRunMaxAttachCameraRoll;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float AlignSpeedCoefficient;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float WallRunCurrentSpeed;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	float WallRunSlowDownDuration;
 
 public:	
 	// Sets default values for this component's properties
@@ -105,7 +132,15 @@ public:
 	UFUNCTION()
 	void UpdateWallRunAttach(float Roll);
 
+	UFUNCTION()
+	void UpdateWallRunSlowDown(float Speed);
+
+	UFUNCTION()
+	void UpdateWallRunDetach(float Roll);
+
 	float CalculateCurrentCameraRoll() const;
 
 	void UpdateWallRunCameraRoll();
+
+	float GetSpeedCoefficient(float Distance, float Duration, int StepsNum) const;
 };

@@ -9,7 +9,8 @@
 UENUM(BlueprintType)
 enum class ECustomMovementMode : uint8
 {
-    CMOVE_Dash UMETA(DisplayName = "Dash")
+    CMOVE_Dash UMETA(DisplayName = "Dash"),
+    CMOVE_WallRun UMETA(DisplayName = "WallRun")
 };
 
 /**
@@ -25,6 +26,9 @@ public:
 
     void StartDash();
     void StopDash();
+
+    void StartWallRun();
+    void StopWallRun();
 
 protected:
     virtual void PhysCustom(float DeltaTime, int32 Iterations) override;

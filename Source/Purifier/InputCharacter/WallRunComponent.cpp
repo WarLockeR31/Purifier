@@ -1,6 +1,3 @@
-
-
-
 #include "WallRunComponent.h"
 #include "Components/TimelineComponent.h"
 #include "InputCharacter.h"
@@ -18,6 +15,13 @@ UWallRunComponent::UWallRunComponent()
 
 	WallRunTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunTimeline"));
 	WallRunAttachTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunAttachTimeline"));
+	WallRunDetachTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunDetachTimeline"));
+	WallRunSlowDownTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("WallRunSlowDownTimeline"));
+
+
+	//WallRunTimeline->AddTickPrerequisiteComponent(WallRunAttachTimeline);
+	WallRunAttachTimeline->AddTickPrerequisiteComponent(WallRunTimeline);
+	WallRunSlowDownTimeline->AddTickPrerequisiteComponent(WallRunTimeline);
 }
 
 
@@ -55,12 +59,31 @@ void UWallRunComponent::BeginPlay()
 
 	FOnTimelineFloat WallRunAttachProgress;
 	WallRunAttachProgress.BindUFunction(this, FName("UpdateWallRunAttach"));
-	WallRunAttachTimeline->AddInterpFloat(WallRunAttachCurve, WallRunAttachProgress);
-	//WallRunAttachTimeline->SetTimelineLengthMode(ETimelineLengthMode::TL_TimelineLength);
-	WallRunAttachTimeline->SetTimelineLength(WallRunAttachDuration);
+	WallRunAttachTimeline->AddInterpFloat(WallRunAttachRollCurve, WallRunAttachProgress);
+	//WallRunAttachTimeline->SetTimelineLength(WallRunAttachDuration);
 	WallRunAttachTimeline->SetPlayRate(1.0f / WallRunAttachDuration);
+	FOnTimelineEvent WallRunAttachTimelineFinished;
+	/*WallRunAttachTimelineFinished.BindUFunction(this, FName("OnWallRunAttachEnd"));
+	WallRunAttachTimeline->SetTimelineFinishedFunc(WallRunAttachTimelineFinished);*/
+	WallRunAttachTimelineFinished.BindUFunction(WallRunSlowDownTimeline, FName("PlayFromStart"));
+	WallRunAttachTimeline->SetTimelineFinishedFunc(WallRunAttachTimelineFinished);
 
-	
+	FOnTimelineFloat WallRunSlowDownProgress;
+	WallRunSlowDownProgress.BindUFunction(this, FName("UpdateWallRunSlowDown"));
+	WallRunSlowDownTimeline->AddInterpFloat(WallRunSlowDownCurve, WallRunSlowDownProgress);
+	//WallRunSlowDownTimeline->SetTimelineLength(WallRunSlowDownDuration);
+	WallRunSlowDownTimeline->SetPlayRate(1.0f / WallRunSlowDownDuration);
+
+	FOnTimelineFloat WallRunDetachProgress;
+	WallRunDetachProgress.BindUFunction(this, FName("UpdateWallRunDetach"));
+	WallRunDetachTimeline->AddInterpFloat(WallRunDetachRollCurve, WallRunDetachProgress);
+	WallRunDetachTimeline->SetPlayRate(1.0f / WallRunAttachDuration);
+
+	AlignSpeedCoefficient = GetSpeedCoefficient(
+		WallRunCollider->GetScaledCapsuleRadius() - OwnerInputCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius(),
+		WallRunAttachDuration,
+		500
+	);
 }
 
 
@@ -69,7 +92,7 @@ void UWallRunComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Magenta, FString::Printf(TEXT("Vel: %.2f"), InputCharacterMovementComponent->Velocity.Length()));
 }
 
 void UWallRunComponent::OnWallTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, 
@@ -108,7 +131,7 @@ void UWallRunComponent::OnWallTriggerBeginOverlap(UPrimitiveComponent* Overlappe
 		return;
 
 	bIsWallRunLeft = OwnerInputCharacter->GetActorRightVector().Dot(Hit->ImpactNormal) > 0;
-	WallRunDirection = Hit->ImpactNormal.Cross(FVector(0.f, 0.f, bIsWallRunLeft ? 1.f : -1.f));
+	WallRunDirection = Hit->ImpactNormal.Cross(FVector(0.f, 0.f, bIsWallRunLeft ? 1.f : -1.f)).GetSafeNormal();
 
 	if (WallRunDirection.Dot(OwnerInputCharacter->GetVelocity()) < 0)
 	{
@@ -156,16 +179,24 @@ void UWallRunComponent::UpdateWallRun()
 		return;
 	}
 
+	//if ()
+
 	WallRunDirection = Hit.ImpactNormal.Cross(FVector(0.f, 0.f, bIsWallRunLeft ? 1.f : -1.f));
 
 	UpdateWallRunCameraRoll();
 
-	OwnerInputCharacter->LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 2000.f, true, true);
+	if (WallRunAttachTimeline->IsPlaying())
+		return;
+
+	WallRunCurrentSpeed *= WallRunSpeedAlpha;
+	InputCharacterMovementComponent->Velocity = WallRunDirection.GetSafeNormal() * WallRunCurrentSpeed;
+	//OwnerInputCharacter->LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 2000.f, true, true);
+	//InputCharacterMovementComponent->Velocity = AlignDirection * WallRunAttachAlignSpeedCurve->GetFloatValue(CurTLTime) * AlignSpeedCoefficient;
 }
 
 void UWallRunComponent::EndWallRun()
 {
-	WallRunAttachTimeline->Reverse();
+	WallRunDetachTimeline->PlayFromStart();
 	WallRunTimeline->Stop();
 	InputCharacterMovementComponent->SetPlaneConstraintNormal(FVector(0.f, 0.f, 0.f));
 	InputCharacterMovementComponent->GravityScale = 1.f;
@@ -199,21 +230,44 @@ bool UWallRunComponent::AreRequiredKeysDown() const
 
 void UWallRunComponent::UpdateWallRunAttach(float Roll)
 {
-
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), WallRunMaxCameraRoll * Roll));
-	WallRunMaxAttachmentCameraRoll = WallRunMaxCameraRoll * (bIsWallRunLeft ? Roll : -Roll);
-	
-	if (bIsWallRunning)
-		return;
+	WallRunMaxAttachCameraRoll = WallRunMaxCameraRoll * (bIsWallRunLeft ? Roll : -Roll);
 
+	float CurTLTime = WallRunAttachTimeline->GetPlaybackPosition();
+
+	//Align section
+	FVector AlignDirection = WallRunDirection.Cross(FVector(0.f, 0.f, bIsWallRunLeft ? 1.f : -1.f)).GetSafeNormal();
+	InputCharacterMovementComponent->Velocity = AlignDirection * WallRunAttachAlignSpeedCurve->GetFloatValue(CurTLTime) * AlignSpeedCoefficient;
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, InputCharacterMovementComponent->Velocity.ToString());
+	/*OwnerInputCharacter->LaunchCharacter(
+		AlignDirection * WallRunAttachAlignSpeedCurve->GetFloatValue(CurTLTime) * AlignSpeedCoefficient, 
+		false, 
+		false
+	);*/
+
+	FVector WallRunStartVelocity = (AlignDirection * WallRunAttachAlignSpeedCurve->GetFloatValue(CurTLTime) * AlignSpeedCoefficient) + WallRunDirection.GetSafeNormal() * 2000.f * Roll;
+	WallRunCurrentSpeed = WallRunStartVelocity.Length();
+	InputCharacterMovementComponent->Velocity = WallRunStartVelocity;
+	//OwnerInputCharacter->LaunchCharacter(FVector(WallRunDirection.X, WallRunDirection.Y, 0.f) * 2000.f, true, true);
+}
+
+void UWallRunComponent::UpdateWallRunSlowDown(float Speed)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), Speed));
+
+	WallRunSpeedAlpha = Speed;
+}
+
+void UWallRunComponent::UpdateWallRunDetach(float Roll)
+{
+	WallRunMaxAttachCameraRoll = WallRunMaxCameraRoll * (bIsWallRunLeft ? Roll : -Roll);
 	UpdateWallRunCameraRoll();
 }
 
 float UWallRunComponent::CalculateCurrentCameraRoll() const
 {
 	float angleAlpha = FVector::DotProduct(OwnerInputCharacter->GetActorForwardVector(), WallRunDirection.GetSafeNormal());
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Angle: %.2f"), WallRunMaxAttachmentCameraRoll * angleAlpha));
-	return WallRunMaxAttachmentCameraRoll * angleAlpha;
+	return WallRunMaxAttachCameraRoll * angleAlpha;
 }
 
 void UWallRunComponent::UpdateWallRunCameraRoll()
@@ -221,4 +275,19 @@ void UWallRunComponent::UpdateWallRunCameraRoll()
 	FRotator OwnerControlRotation = OwnerContoller->GetControlRotation();
 	OwnerControlRotation.Roll = CalculateCurrentCameraRoll();
 	OwnerContoller->SetControlRotation(OwnerControlRotation);
+}
+
+float UWallRunComponent::GetSpeedCoefficient(float Distance, float Duration, int StepsNum) const
+{
+	float MinTime, MaxTime;
+	WallRunAttachAlignSpeedCurve->GetTimeRange(MinTime, MaxTime);
+
+	float step = (MaxTime - MinTime) / StepsNum;
+	float ApproximateCurveS = 0.f;
+	for (float i = MinTime; i < MaxTime; i += step)
+	{
+		ApproximateCurveS += WallRunAttachAlignSpeedCurve->GetFloatValue(i + step) * step;
+	}
+
+	return Distance / ApproximateCurveS / Duration;
 }

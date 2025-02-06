@@ -94,7 +94,7 @@ float UDashByCurveComponent::GetSpeedCoefficient() const
 	float MinTime, MaxTime;
 	DashCurve->GetTimeRange(MinTime, MaxTime);
 
-	float step = (MaxTime - MinTime) / 200.f;
+	float step = (MaxTime - MinTime) / 500.f;
 	float ApproximateCurveS = 0.f;
 	for (float i = MinTime; i < MaxTime; i += step)
 	{
