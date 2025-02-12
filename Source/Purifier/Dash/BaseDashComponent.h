@@ -14,12 +14,9 @@ class PURIFIER_API UBaseDashComponent : public UActorComponent
 	GENERATED_BODY()
 
 protected:
-	// Указатель на владельца, реализующего интерфейс IDashable
 	TScriptInterface<IDashable> OwnerDashable;
 
 	APawn* OwnerPawn;
-
-	// Флаг, указывающий, активен ли рывок
 	bool bIsDashing;
 
 public:	
@@ -27,19 +24,19 @@ public:
 	UBaseDashComponent();
 
 protected:
-	// Called when the game starts
 	virtual void BeginPlay() override;
 
 	void SetOwners();
 
+	
+
 public:	
-	// Called every frame
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	// Начало рывка
 	UFUNCTION()
-	virtual void StartDash();
-
-	// Завершение рывка
-	virtual void EndDash();
+	virtual void StartDash() PURE_VIRTUAL(StartDash, );
+	UFUNCTION()
+	virtual void OnDashEnd() PURE_VIRTUAL(OnDashEnd, );
+	UFUNCTION()
+	virtual void CancelDash() PURE_VIRTUAL(CancelDash, );
+	UFUNCTION()
+	virtual bool IsInstantDash() const PURE_VIRTUAL(IsInstantDash, return false;);
 };

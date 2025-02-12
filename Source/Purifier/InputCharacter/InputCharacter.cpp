@@ -4,16 +4,14 @@
 #include "InputCharacter.h"
 #include <EnhancedInputComponent.h>
 #include <EnhancedInputSubsystems.h>
-
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
-
-#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/TimelineComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include <Kismet/KismetMathLibrary.h>
 #include <Purifier/Dash/BaseDashComponent.h>
 #include <Purifier/InputCharacter/HandSwayComponent.h>
-#include "WallRunComponent.h"
+#include "InputCharacterMovementComponent.h"
 
 
 // Sets default values
@@ -29,9 +27,10 @@ AInputCharacter::AInputCharacter()
 	GetMesh()->SetupAttachment(Camera);
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
-	WallRunComponent = CreateDefaultSubobject<UWallRunComponent>("WallRun");
+	WallRunAttachCameraRollTimeline = CreateDefaultSubobject<UTimelineComponent>("CameraRollTimeline");
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
+	
 }
 
 // Called when the game starts or when spawned
@@ -39,9 +38,15 @@ void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+
+	InputCharacterMovementComponent->OnComponentWallRelativeRotationChanged.AddDynamic(this, &AInputCharacter::UpdateWallRunCameraRoll);
 	
 	DashComponent = FindComponentByClass<UBaseDashComponent>();
-	GetCharacterMovement()->MaxAcceleration = 100000.f;
+
+	FOnTimelineFloat WallRunAttachProgress;
+	WallRunAttachProgress.BindUFunction(this, FName("UpdateWallRunAttachCameraRoll"));
+	WallRunAttachCameraRollTimeline->AddInterpFloat(WallRunAttachCameraRollAlpha, WallRunAttachProgress);
+	WallRunAttachCameraRollTimeline->SetPlayRate(1.0f / WallRunAttachDuration);
 }
 
 // Called every frame
@@ -84,7 +89,7 @@ void AInputCharacter::Dash()
 void AInputCharacter::Move(const FInputActionValue& InputValue)
 {
 	MoveInputVector = InputValue.Get<FVector2D>();
-	if (IsValid(Controller) /*&& !bWallRunning */)
+	if (IsValid(Controller))
 	{
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -112,14 +117,26 @@ void AInputCharacter::Jump()
 	Super::Jump();
 }
 
+FCollisionQueryParams AInputCharacter::GetIgnoreCharacterParams() const
+{
+	FCollisionQueryParams Params;
 
+	TArray<AActor*> CharacterChildren;
+	GetAllChildActors(CharacterChildren);
+	Params.AddIgnoredActors(CharacterChildren);
+	Params.AddIgnoredActor(this);
 
+	return Params;
+}
 
-
-
-
-
-
+void AInputCharacter::CancelDash()
+{
+	if (DashComponent && !DashComponent->IsInstantDash())
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Dash Cancelling");
+		DashComponent->CancelDash();
+	}
+}
 
 UInputCharacterMovementComponent* AInputCharacter::GetInputCharacterMovement()
 {
@@ -129,6 +146,18 @@ UInputCharacterMovementComponent* AInputCharacter::GetInputCharacterMovement()
 void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
 {
 	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	if (InputCharacterMovementComponent->IsWallRunning())
+	{
+		WallRunAttachCameraRollTimeline->PlayFromStart();
+		if (PrevMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Dash)
+			CancelDash();
+	}
+
+	if (PrevMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_WallRun)
+	{
+		WallRunAttachCameraRollTimeline->Reverse();
+	}
 
 	if (GetCharacterMovement()->IsFalling())
 	{
@@ -148,7 +177,7 @@ void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint
 
 void AInputCharacter::OnCoyoteTimePassed()
 {
-
+	GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Coyote Time Passed");
 }
 
 void AInputCharacter::Landed(const FHitResult& Hit)
@@ -221,3 +250,30 @@ FVector2D AInputCharacter::GetInputDirection() const
 {
 	return MoveInputVector;
 }
+
+void AInputCharacter::UpdateWallRunCameraRoll(float NewAlpha)
+{
+	WallRunRelativeMaxCameraRoll = NewAlpha * WallRunMaxCameraRoll;
+	
+	if (!WallRunAttachCameraRollTimeline->IsPlaying())
+	{
+		FRotator OwnerControlRotation = Controller->GetControlRotation();
+		OwnerControlRotation.Roll = WallRunRelativeMaxCameraRoll;
+		Controller->SetControlRotation(OwnerControlRotation);
+	}
+}
+
+void AInputCharacter::UpdateWallRunAttachCameraRoll(float RollAlpha)
+{
+	WallRunMaxAttachCameraRoll = RollAlpha * WallRunRelativeMaxCameraRoll;
+
+	SetCameraRoll(WallRunMaxAttachCameraRoll);
+}
+
+void AInputCharacter::SetCameraRoll(float NewRoll)
+{
+	FRotator OwnerControlRotation = Controller->GetControlRotation();
+	OwnerControlRotation.Roll = NewRoll;
+	Controller->SetControlRotation(OwnerControlRotation);
+}
+

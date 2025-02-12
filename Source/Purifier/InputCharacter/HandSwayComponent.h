@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "InputCharacter.h"	
 
 #include "HandSwayComponent.generated.h"
 
@@ -15,13 +14,13 @@ class PURIFIER_API UHandSwayComponent : public UActorComponent
 	GENERATED_BODY()
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
-	AInputCharacter* OwnerInputCharacter;
+	class AInputCharacter* OwnerInputCharacter;
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
 	USkeletalMeshComponent* HandsMesh;
 
 	UPROPERTY()
-	UInputCharacterMovementComponent* InputCharacterMovementComponent;
+	class UInputCharacterMovementComponent* InputCharacterMovementComponent;
 
 protected:
 

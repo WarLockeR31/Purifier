@@ -44,29 +44,27 @@ public:
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
-
-	//Dash
-	virtual void StartDash() override;
 	
 	UFUNCTION()
 	virtual void DashTimelineProgress(float Value);
-	
-	UFUNCTION()
-	virtual void EndDash() override;
-	
+	virtual void OnDashEnd() override;
 	void ResetDashCooldown();
-	//Integrating curve
 	
+	//Integrating curve
 	float GetSpeedCoefficient() const;
 
-	
 	virtual FVector2D GetMoveInputVector();
 
 
 public:
-	// Called every frame
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	//Dash
+	virtual void StartDash() override;
+
+	
+
+	virtual void CancelDash() override;
+
+	virtual bool IsInstantDash() const override;
 
 
-		
 };

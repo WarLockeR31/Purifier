@@ -5,6 +5,8 @@
 #include "Camera/CameraActor.h"
 #include "Components/TimelineComponent.h"
 #include <Kismet/KismetMathLibrary.h>
+#include "InputCharacter.h"
+#include "InputCharacterMovementComponent.h"
 
 // Sets default values for this component's properties
 UHandSwayComponent::UHandSwayComponent()

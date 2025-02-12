@@ -5,18 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Purifier/Dash/Dashable.h"
-#include "Purifier/Dash/BaseDashComponent.h"
-#include "InputCharacterMovementComponent.h"
 #include "InputActionValue.h"
-
-
 #include "InputCharacter.generated.h"
-
-
-
-class UHandSwayComponent;
-class UDashComponent;
-class UWallRunComponent;
 
 UCLASS()
 class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
@@ -31,16 +21,12 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 	FVector2D MoveInputVector;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dash")
-	UBaseDashComponent* DashComponent;
+	class UBaseDashComponent* DashComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "HandsSway")
-	UHandSwayComponent* HandSwayComponent;
-
-	UPROPERTY(VisibleAnywhere, Category = "WallRun")
-	UWallRunComponent* WallRunComponent;
-
+	class UHandSwayComponent* HandSwayComponent;
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
-	UInputCharacterMovementComponent* InputCharacterMovementComponent;
+	class UInputCharacterMovementComponent* InputCharacterMovementComponent;
 
 protected:
 
@@ -62,16 +48,31 @@ protected:
 #pragma endregion Input
 
 
-
-	
-
 	UPROPERTY(EditAnywhere, Category = "Movement")
 	float CoyoteTime;
 
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
 	FTimerHandle CoyoteTimerHandle;
 
-	
+
+#pragma region WallRun
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	float WallRunMaxCameraRoll;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float WallRunRelativeMaxCameraRoll;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	float WallRunMaxAttachCameraRoll;
+
+	UPROPERTY(VisibleAnywhere, Category = "WallRun")
+	class UTimelineComponent* WallRunAttachCameraRollTimeline;
+
+	UPROPERTY(EditDefaultsOnly) UCurveFloat* WallRunAttachCameraRollAlpha;
+
+	UPROPERTY(EditAnywhere, Category = "WallRun")
+	float WallRunAttachDuration;
+#pragma endregion
 
 public:
 	// Sets default values for this character's properties
@@ -101,7 +102,14 @@ protected:
 	
 
 
-	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode) override;\
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode) override; 
+	
+	UFUNCTION()
+	void UpdateWallRunCameraRoll(float NewAlpha);
+
+	UFUNCTION()
+	void UpdateWallRunAttachCameraRoll(float RollAlpha);
+		
 	virtual void Landed(const FHitResult& Hit) override;
 
 	virtual void CheckJumpInput(float DeltaTime) override;
@@ -118,4 +126,12 @@ public:
 
 	virtual FVector GetMoveDirection() const override;  // Метод для получения направления рывка.
 	virtual FVector2D GetInputDirection() const override;
+
+	FCollisionQueryParams GetIgnoreCharacterParams() const;
+
+	void CancelDash();
+
+	// Helpers	
+private:
+	void SetCameraRoll(float NewRoll);
 };

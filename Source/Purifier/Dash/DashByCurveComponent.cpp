@@ -8,9 +8,7 @@
 // Sets default values for this component's properties
 UDashByCurveComponent::UDashByCurveComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 
 	DashTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DashTimeline"));
 }
@@ -27,32 +25,19 @@ void UDashByCurveComponent::BeginPlay()
 	DashTimeline->SetPlayRate(1.f / DashDuration);
 
 	FOnTimelineEvent TimelineFinishedCallback;
-	TimelineFinishedCallback.BindUFunction(this, FName("EndDash"));
+	TimelineFinishedCallback.BindUFunction(this, FName("OnDashEnd"));
 	DashTimeline->SetTimelineFinishedFunc(TimelineFinishedCallback);
 
 	DashSpeedCoefficient = GetSpeedCoefficient();
 }
-
-
-// Called every frame
-void UDashByCurveComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// ...
-}
-
 
 void UDashByCurveComponent::StartDash()
 {
 	if (bIsDashing)
 		return;
 
-	//GetCharacterMovement()->StopMovementImmediately();
 	bIsDashing = true;
-	//Owner->GetCharacterMovement()->BrakingFrictionFactor = 0.f;
 	OwnerDashable->OnDashStart();
-
 
 	const FRotator Rotation = OwnerPawn->Controller->GetControlRotation();
 	const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -61,7 +46,6 @@ void UDashByCurveComponent::StartDash()
 	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	FVector2D DashDirection = GetMoveInputVector();
-	//DashVector = (ForwardDirection * 1 + RightDirection * 0).GetSafeNormal();
 	DashVector = (ForwardDirection * DashDirection.Y + RightDirection * DashDirection.X).GetSafeNormal();
 
 	//Timeline start
@@ -71,14 +55,11 @@ void UDashByCurveComponent::StartDash()
 void UDashByCurveComponent::DashTimelineProgress(float Value)
 {
 	OwnerPawn->GetMovementComponent()->Velocity = DashVector * Value * DashSpeedCoefficient;
-	//Owner->LaunchCharacter(DashVector * Value * DashSpeedCoefficient, true, true);
 }
 
-void UDashByCurveComponent::EndDash()
+void UDashByCurveComponent::OnDashEnd()
 {
 	OwnerPawn->GetMovementComponent()->Velocity = DashVector * DashDistance * 50.f;
-	//Owner->LaunchCharacter(DashVector * DashDistance * 50.f, true, true);
-	//Owner->GetCharacterMovement()->BrakingFrictionFactor = 2.f;
 	OwnerDashable->OnDashEnd();
 
 	OwnerPawn->GetWorldTimerManager().SetTimer(DashHandle, this, &UDashByCurveComponent::ResetDashCooldown, DashCooldown, false);
@@ -109,3 +90,14 @@ FVector2D UDashByCurveComponent::GetMoveInputVector()
 	return OwnerDashable->GetInputDirection();
 }
 
+void UDashByCurveComponent::CancelDash()
+{
+	DashTimeline->Stop();
+	OwnerDashable->OnDashEnd();
+	OwnerPawn->GetWorldTimerManager().SetTimer(DashHandle, this, &UDashByCurveComponent::ResetDashCooldown, DashCooldown, false);
+}
+
+bool UDashByCurveComponent::IsInstantDash() const
+{
+	return false;
+}
