@@ -105,7 +105,6 @@ void UInputCharacterMovementComponent::PhysCustom(float deltaTime, int32 Iterati
 	switch (CustomMovementMode)
 	{
 	case CMOVE_Dash:
-		
 		SafeMoveUpdatedComponent(Velocity * deltaTime, UpdatedComponent->GetComponentQuat(), true, x);
 		break;
 	case CMOVE_WallRun:
@@ -140,7 +139,9 @@ bool UInputCharacterMovementComponent::TryWallRun()
 	if (Velocity.SizeSquared2D() < pow(MinWallRunSpeed, 2)) return false;
 	if (Velocity.Z < -MaxVerticalWallRunSpeed) return false;
 	FVector Start = UpdatedComponent->GetComponentLocation();
-	FVector End = Start + (Velocity.GetSafeNormal2D() + Acceleration.GetSafeNormal2D()).GetSafeNormal() * TryWallRunTraceDisstance;
+
+	FVector SideAcceleration = Acceleration.ProjectOnTo(InputCharacterOwner->GetActorRightVector());
+	FVector End = Start + (Velocity.GetSafeNormal2D() + SideAcceleration.GetSafeNormal2D()).GetSafeNormal() * TryWallRunTraceDisstance;
 	auto Params = InputCharacterOwner->GetIgnoreCharacterParams();
 
 	FHitResult FloorHit;
@@ -187,7 +188,7 @@ bool UInputCharacterMovementComponent::TryWallRun()
 	if (!WallHitCapsule)
 		return false;
 
-	float ApproachSpeed = Velocity | -WallHitCapsule->ImpactNormal;                           
+	float ApproachSpeed = (Velocity.GetSafeNormal2D() + SideAcceleration.GetSafeNormal2D()).GetSafeNormal() * Velocity.Size2D() | -WallHitCapsule->ImpactNormal;
 	if (!SurfaceIsWallRunnable(WallHitCapsule->ImpactNormal) || ApproachSpeed < MinApproachSpeedForWallRun)
 		return false;
 
@@ -334,7 +335,7 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("Speed: %.2f"), Velocity.Length()));
 
 	FVector Start = UpdatedComponent->GetComponentLocation();
-	FVector CastDirection = Velocity.Cross(FVector(0.f, 0.f, Safe_bWallRunIsLeft ? 1.f : -1.f));
+	FVector CastDirection = Velocity.GetSafeNormal2D().Cross(FVector(0.f, 0.f, Safe_bWallRunIsLeft ? 1.f : -1.f));
 	FVector CastDelta = CastDirection * CapR() * 2;
 	FVector End = Start + CastDelta;
 	auto Params = InputCharacterOwner->GetIgnoreCharacterParams();
@@ -385,7 +386,7 @@ float UInputCharacterMovementComponent::CapHH() const
 bool UInputCharacterMovementComponent::TraceToWall(FHitResult& OutHit) const
 {
 	FVector Start = UpdatedComponent->GetComponentLocation();
-	FVector CastDirection = Velocity.Cross(FVector(0.f, 0.f, Safe_bWallRunIsLeft ? 1.f : -1.f));
+	FVector CastDirection = Velocity.GetSafeNormal2D().Cross(FVector(0.f, 0.f, Safe_bWallRunIsLeft ? 1.f : -1.f));
 	FVector CastDelta = CastDirection * CapR() * 2;
 	FVector End = Start + CastDelta;
 	auto Params = InputCharacterOwner->GetIgnoreCharacterParams();

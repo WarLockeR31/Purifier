@@ -38,7 +38,6 @@ void AInputCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-
 	InputCharacterMovementComponent->OnComponentWallRelativeRotationChanged.AddDynamic(this, &AInputCharacter::UpdateWallRunCameraRoll);
 	
 	DashComponent = FindComponentByClass<UBaseDashComponent>();
@@ -53,6 +52,8 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Value: %d"), JumpCurrentCount));
+	
 }
 
 // Called to bind functionality to input
@@ -77,6 +78,20 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
 		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::Dash);  //Dash on
+	}
+}
+
+void AInputCharacter::ResetJumpState()
+{
+	bPressedJump = false;
+	bWasJumping = false;
+	JumpKeyHoldTime = 0.0f;
+	JumpForceTimeRemaining = 0.0f;
+
+	if (InputCharacterMovementComponent && !InputCharacterMovementComponent->IsFalling() && !InputCharacterMovementComponent->IsDashing())
+	{
+		JumpCurrentCount = 0;
+		JumpCurrentCountPreJump = 0;
 	}
 }
 
@@ -159,7 +174,7 @@ void AInputCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint
 		WallRunAttachCameraRollTimeline->Reverse();
 	}
 
-	if (GetCharacterMovement()->IsFalling())
+	if (PrevMovementMode == MOVE_Walking && InputCharacterMovementComponent->IsFalling())
 	{
 		float NormalizedVelocity = UKismetMathLibrary::NormalizeToRange(GetVelocity().Length(), 0.f, GetCharacterMovement()->MaxWalkSpeed);
 		float CoyoteTimeModifier = FMath::Lerp(0.25f, 1.f, FMath::Clamp(NormalizedVelocity, 0.f, 1.f));
