@@ -43,6 +43,7 @@ class PURIFIER_API UInputCharacterMovementComponent : public UCharacterMovementC
     UPROPERTY(EditDefaultsOnly) float AccelerationUp = 5.f;
     UPROPERTY(EditDefaultsOnly) float FallStartTime = 3.f;
     UPROPERTY(EditDefaultsOnly) float WallRunSameSideCooldown = 3.f;
+    UPROPERTY(EditDefaultsOnly) float MaxDashSlideAngle = 45.f;
 
     class AInputCharacter* InputCharacterOwner;
 

@@ -101,11 +101,16 @@ void UInputCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float 
 void UInputCharacterMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 {
 	Super::PhysCustom(deltaTime, Iterations);
-	FHitResult x;
+	
+	FHitResult DashHit;
 	switch (CustomMovementMode)
 	{
 	case CMOVE_Dash:
-		SafeMoveUpdatedComponent(Velocity * deltaTime, UpdatedComponent->GetComponentQuat(), true, x);
+		SafeMoveUpdatedComponent(Velocity * deltaTime, UpdatedComponent->GetComponentQuat(), true, DashHit);
+		if (DashHit.IsValidBlockingHit() && ((FVector::VectorPlaneProject(Velocity, DashHit.Normal).GetSafeNormal() | Velocity.GetSafeNormal()) >= FMath::Cos(FMath::DegreesToRadians(MaxWallTurnAngle))))
+		{
+			SlideAlongSurface(Velocity * deltaTime, 1.f - DashHit.Time, DashHit.Normal, DashHit, true);
+		}
 		break;
 	case CMOVE_WallRun:
 		PhysWallRun(deltaTime, Iterations);
