@@ -193,7 +193,7 @@ bool UInputCharacterMovementComponent::TryWallRun()
 	if (!WallHitCapsule)
 		return false;
 
-	float ApproachSpeed = (Velocity.GetSafeNormal2D() + SideAcceleration.GetSafeNormal2D()).GetSafeNormal() * Velocity.Size2D() | -WallHitCapsule->ImpactNormal;
+	float ApproachSpeed = (Velocity + SideAcceleration)/2 | -WallHitCapsule->ImpactNormal;
 	if (!SurfaceIsWallRunnable(WallHitCapsule->ImpactNormal) || ApproachSpeed < MinApproachSpeedForWallRun)
 		return false;
 
