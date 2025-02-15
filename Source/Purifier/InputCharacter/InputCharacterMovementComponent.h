@@ -45,6 +45,10 @@ class PURIFIER_API UInputCharacterMovementComponent : public UCharacterMovementC
     UPROPERTY(EditDefaultsOnly) float WallRunSameSideCooldown = 3.f;
     UPROPERTY(EditDefaultsOnly) float MaxDashSlideAngle = 45.f;
 
+    UPROPERTY(EditDefaultsOnly) float FallingGravityScale = 2.f;
+
+    float BaseGravityScale = 1.f;
+
     class AInputCharacter* InputCharacterOwner;
 
     bool Safe_bWallRunIsLeft;
@@ -61,6 +65,7 @@ public:
     // Actor Component
 protected:
     virtual void InitializeComponent() override;
+    virtual void BeginPlay() override;
 
     // Events
 private:
@@ -93,6 +98,7 @@ private:
     bool TryWallRun();
     //WallRun helper
     bool SurfaceIsWallRunnable(const FVector SurfaceNormal) const;
+    virtual void PhysFalling(float deltaTime, int32 Iterations) override;
     void PhysWallRun(float deltaTime, int32 Iterations);
 
     // Interface
