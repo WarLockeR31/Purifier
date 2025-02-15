@@ -11,6 +11,7 @@
 #include <Kismet/KismetMathLibrary.h>
 #include <Purifier/Dash/BaseDashComponent.h>
 #include <Purifier/InputCharacter/HandSwayComponent.h>
+#include "Purifier/Weapons/WeaponComponent.h"
 #include "InputCharacterMovementComponent.h"
 
 
@@ -28,6 +29,7 @@ AInputCharacter::AInputCharacter()
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 	WallRunAttachCameraRollTimeline = CreateDefaultSubobject<UTimelineComponent>("CameraRollTimeline");
+	WeaponComponent = CreateDefaultSubobject<UWeaponComponent>("Weapon");
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
 	
@@ -78,6 +80,15 @@ void AInputCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AInputCharacter::Look);
 		Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AInputCharacter::Jump);
 		Input->BindAction(DashAction, ETriggerEvent::Triggered, this, &AInputCharacter::Dash);  //Dash on
+
+		Input->BindAction(SelectWeapon1Action, ETriggerEvent::Triggered, this, &AInputCharacter::SelectWeapon1);
+		Input->BindAction(SelectWeapon2Action, ETriggerEvent::Triggered, this, &AInputCharacter::SelectWeapon2);
+		Input->BindAction(SelectWeapon3Action, ETriggerEvent::Triggered, this, &AInputCharacter::SelectWeapon3);
+		Input->BindAction(SelectWeapon4Action, ETriggerEvent::Triggered, this, &AInputCharacter::SelectWeapon4);
+		Input->BindAction(SelectWeapon5Action, ETriggerEvent::Triggered, this, &AInputCharacter::SelectWeapon5);
+
+		Input->BindAction(PrimaryFireAction, ETriggerEvent::Triggered, this, &AInputCharacter::PrimaryFire);
+		Input->BindAction(SecondaryFireAction, ETriggerEvent::Triggered, this, &AInputCharacter::SecondaryFire);
 	}
 }
 

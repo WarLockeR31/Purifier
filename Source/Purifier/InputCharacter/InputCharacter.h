@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Purifier/Dash/Dashable.h"
 #include "InputActionValue.h"
+#include "Purifier/Weapons/WeaponComponent.h"
 #include "InputCharacter.generated.h"
 
 UCLASS()
@@ -27,6 +28,8 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 	class UHandSwayComponent* HandSwayComponent;
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
 	class UInputCharacterMovementComponent* InputCharacterMovementComponent;
+	UPROPERTY(VisibleAnywhere, Category = "Weapon")
+	UWeaponComponent* WeaponComponent;
 
 protected:
 
@@ -45,6 +48,27 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputAction* DashAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* PrimaryFireAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SecondaryFireAction;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SelectWeapon1Action;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SelectWeapon2Action;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SelectWeapon3Action;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SelectWeapon4Action;
+
+	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
+	class UInputAction* SelectWeapon5Action;
 #pragma endregion Input
 
 
@@ -96,6 +120,13 @@ protected:
 	void Look(const FInputActionValue& InputValue);
 	void Jump();
 	void Dash();
+	void SelectWeapon1() { WeaponComponent->SelectWeapon(1); };
+	void SelectWeapon2() { WeaponComponent->SelectWeapon(2); };
+	void SelectWeapon3() { WeaponComponent->SelectWeapon(3); };
+	void SelectWeapon4() { WeaponComponent->SelectWeapon(4); };
+	void SelectWeapon5() { WeaponComponent->SelectWeapon(5); };
+	void PrimaryFire() { WeaponComponent->FirePrimary(); };
+	void SecondaryFire() { WeaponComponent->FireSecondary(); };
 	
 
 	
