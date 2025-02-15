@@ -28,6 +28,11 @@ void UInputCharacterMovementComponent::InitializeComponent()
 	}
 }
 
+void UInputCharacterMovementComponent::BeginPlay()
+{
+	BaseGravityScale = GravityScale;
+}
+
 float UInputCharacterMovementComponent::GetMaxSpeed() const
 {
 	if (MovementMode != MOVE_Custom) return Super::GetMaxSpeed();
@@ -85,6 +90,12 @@ bool UInputCharacterMovementComponent::DoJump(bool bReplayingMoves)
 	return false;
 }
 
+void UInputCharacterMovementComponent::PhysFalling(float deltaTime, int32 Iterations)
+{
+	GravityScale = (Velocity.Z < 0) ? FallingGravityScale : BaseGravityScale;
+
+	Super::PhysFalling(deltaTime, Iterations); 
+}
 
 // Movement Pipeline
 void UInputCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
@@ -124,6 +135,11 @@ void UInputCharacterMovementComponent::PhysCustom(float deltaTime, int32 Iterati
 void UInputCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
 {
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+
+	if (PreviousMovementMode == MOVE_Falling)
+	{
+		GravityScale = BaseGravityScale;
+	}
 
 	if (PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_WallRun)
 	{
