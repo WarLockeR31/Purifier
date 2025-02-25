@@ -6,10 +6,14 @@
 #include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "Purifier/DamageSystem/Damagable.h"
+#include "WeaponComponent.h"
 
 AWeaponBase::AWeaponBase()
 {
     PrimaryActorTick.bCanEverTick = false;
+
+    WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WeaponMesh"));
+    RootComponent = WeaponMesh;
 }
 
 void AWeaponBase::FirePrimary_Implementation()
@@ -38,32 +42,45 @@ void AWeaponBase::FireSecondary_Implementation()
 
 void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)
 {
-    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Blue, "G");
-    FVector Start = GetActorLocation();
-    FVector ForwardVector = GetActorRightVector();
-    FVector End = Start + (ForwardVector * 5000.0f); 
+    if (!OwnerWeaponComponent) return;
+
+    FVector Start = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentLocation();
+    FVector ForwardVector = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentRotation().Vector();
+    FVector End = Start + (ForwardVector * 5000.0f);
 
     FHitResult HitResult;
     FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this); 
+    Params.AddIgnoredActor(this);
     Params.AddIgnoredActor(GetOwner());
 
     bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
-
-    if (bHit)
+    if (!bHit)
     {
-        AActor* HitActor = HitResult.GetActor();
-        if (HitActor && HitActor->Implements<UDamagable>())
-        {
-            GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Blue, "GG");
-            IDamagable::Execute_TakeDamage(HitActor, Damage);
-        }
-
-        // Опционально: добавить эффект попадания
-        //UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactEffect, HitResult.ImpactPoint);
+        return;
     }
 
-    DrawDebugLine(GetWorld(), Start, End, FColor::Red, false, 1.0f, 0, 2.0f);
+    End = HitResult.ImpactPoint;
+
+    FVector MuzzleLocation = GetMesh()->GetSocketLocation("Muzzle");
+    FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
+    FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
+
+    FHitResult FinalHitResult;
+    bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
+
+    if (!bFinalHit)
+    {
+        return;
+    }
+
+    AActor* HitActor = FinalHitResult.GetActor();
+    if (HitActor && HitActor->Implements<UDamagable>())
+    {
+        IDamagable::Execute_TakeDamage(HitActor, Damage);
+    }
+    
+    //DrawDebugLine(GetWorld(), Start, End, FColor::Blue, false, 1.0f, 0, 2.0f);
+    DrawDebugLine(GetWorld(), MuzzleLocation, FinalEnd, FColor::Red, false, 1.0f, 0, 2.0f);
 }
 
 void AWeaponBase::FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass)

@@ -30,6 +30,7 @@ AInputCharacter::AInputCharacter()
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 	WallRunAttachCameraRollTimeline = CreateDefaultSubobject<UTimelineComponent>("CameraRollTimeline");
 	WeaponComponent = CreateDefaultSubobject<UWeaponComponent>("Weapon");
+	WeaponComponent->SetRaycastStartPoint(Camera);
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
 	

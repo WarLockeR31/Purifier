@@ -21,9 +21,16 @@ public:
     void FireSecondary();
     void SelectWeapon(int32 WeaponIndex);
 
+    UFUNCTION(BlueprintCallable, Category = "Weapons")
+    void SetRaycastStartPoint(USceneComponent* NewPoint);
+    USceneComponent* GetRaycastStartPoint();
+
 private:
     UPROPERTY(EditDefaultsOnly, Category = "Weapons")
     TArray<TSubclassOf<AWeaponBase>> AvailableWeapons;
+
+    UPROPERTY(VisibleAnywhere, Category = "Weapons")
+    TObjectPtr<USceneComponent> RaycastStartPoint;
 
     UPROPERTY()
     AWeaponBase* CurrentWeapon;

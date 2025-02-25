@@ -22,6 +22,8 @@ class PURIFIER_API AWeaponBase : public AActor
 public:
     AWeaponBase();
 
+    //Fire functions
+public:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FirePrimary();
     virtual void FirePrimary_Implementation();
@@ -49,6 +51,15 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
     FDamageInfo SecondaryDamage;
 
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    USkeletalMeshComponent* WeaponMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    class UWeaponComponent* OwnerWeaponComponent;
+
+
+
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FireRaycast(const FDamageInfo& Damage);
     virtual void FireRaycast_Implementation(const FDamageInfo& Damage);
@@ -56,4 +67,15 @@ protected:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FireProjectile(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
     virtual void FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
+
+    //Getters
+public:
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    USkeletalMeshComponent* GetMesh() const { return WeaponMesh; };
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    class UWeaponComponent* GetOwnerWeaponComponent() const { return OwnerWeaponComponent; };
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    void SetOwnerWeaponComponent(UWeaponComponent* NewOwnerWeaponComponent) { OwnerWeaponComponent = NewOwnerWeaponComponent; };
 };

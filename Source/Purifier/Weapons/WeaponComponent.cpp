@@ -65,6 +65,17 @@ void UWeaponComponent::EquipWeapon(AWeaponBase* NewWeapon)
 {
     if (!NewWeapon) return;
 
+    NewWeapon->SetOwnerWeaponComponent(this);
     NewWeapon->AttachToComponent(OwnerMesh, FAttachmentTransformRules::SnapToTargetIncludingScale, "GripPoint");
     CurrentWeapon = NewWeapon;
+}
+
+void  UWeaponComponent::SetRaycastStartPoint(USceneComponent* NewPoint)
+{
+    RaycastStartPoint = NewPoint;
+}
+
+USceneComponent* UWeaponComponent::GetRaycastStartPoint()
+{
+    return RaycastStartPoint;
 }
