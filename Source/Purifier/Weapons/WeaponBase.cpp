@@ -38,8 +38,9 @@ void AWeaponBase::FireSecondary_Implementation()
 
 void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)
 {
+    GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Blue, "G");
     FVector Start = GetActorLocation();
-    FVector ForwardVector = GetActorForwardVector();
+    FVector ForwardVector = GetActorRightVector();
     FVector End = Start + (ForwardVector * 5000.0f); 
 
     FHitResult HitResult;
