@@ -33,7 +33,6 @@ AInputCharacter::AInputCharacter()
 	WeaponComponent->SetRaycastStartPoint(Camera);
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
-	
 }
 
 // Called when the game starts or when spawned
