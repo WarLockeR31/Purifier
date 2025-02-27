@@ -6,7 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Purifier/Dash/Dashable.h"
 #include "InputActionValue.h"
-#include "Purifier/Weapons/WeaponComponent.h"
+#include "InputCharacterWeaponComponent.h"
 #include "InputCharacter.generated.h"
 
 UCLASS()
@@ -29,7 +29,7 @@ class PURIFIER_API AInputCharacter : public ACharacter, public IDashable
 	UPROPERTY(VisibleAnywhere, Category = "Movement")
 	class UInputCharacterMovementComponent* InputCharacterMovementComponent;
 	UPROPERTY(VisibleAnywhere, Category = "Weapon")
-	UWeaponComponent* WeaponComponent;
+	class UInputCharacterWeaponComponent* WeaponComponent;
 
 protected:
 
@@ -150,7 +150,8 @@ protected:
 	void OnCoyoteTimePassed();
 
 public:
-	UInputCharacterMovementComponent* GetInputCharacterMovement();
+	UInputCharacterMovementComponent* GetInputCharacterMovement() const;
+	UCameraComponent* GetCamera() const { return Camera; };
 
 	virtual void OnDashStart() override;
 	virtual void OnDashEnd() override;

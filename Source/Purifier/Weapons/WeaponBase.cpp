@@ -56,65 +56,22 @@ void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)
     Params.AddIgnoredActor(GetOwner());
 
     bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
-    if (!bHit)
-    {
-        return;
-    }
+    
 
-    End = HitResult.ImpactPoint;
+    End = bHit ? HitResult.ImpactPoint : End;
 
-    FVector MuzzleLocation;
-    {
-        FVector CameraLocation = OwnerWeaponComponent->GetOwner()->GetComponentByClass<UCameraComponent>()->GetComponentLocation();
-        FVector WorldLocation = GetMesh()->GetSocketLocation("Muzzle");  // Мировая точка (X, Y, Z)
-        FVector2D ScreenPositionOldFOV;  // Экранные координаты для старого FOV
-        APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
-
-        if (!PlayerController) return;
-
-        // Получаем текущие размеры экрана
-        int32 ScreenWidth, ScreenHeight;
-        PlayerController->GetViewportSize(ScreenWidth, ScreenHeight);
-        FVector2D ScreenCenter = FVector2D(ScreenWidth / 2.0f, ScreenHeight / 2.0f);
-
-        // Проецируем мировые координаты в экранные (старый FOV)
-        PlayerController->ProjectWorldLocationToScreen(WorldLocation, ScreenPositionOldFOV);
-
-        // Смещение точки относительно центра экрана (в пикселях)
-        FVector2D OffsetFromCenter = ScreenPositionOldFOV - ScreenCenter;
-
-        // Пересчет FOV
-        float OldFOV = 120.0f;  // Текущий FOV
-        float NewFOV = 100.0f;  // Новый FOV
-
-        // Вычисляем коэффициент масштабирования FOV
-        float OldFovRad = FMath::DegreesToRadians(OldFOV);
-        float NewFovRad = FMath::DegreesToRadians(NewFOV);
-
-        float ScaleFactor = FMath::Tan(NewFovRad / 2.0f) / FMath::Tan(OldFovRad / 2.0f);
-
-        // Масштабируем смещение от центра экрана
-        FVector2D NewOffsetFromCenter = OffsetFromCenter * ScaleFactor;
-
-        // Вычисляем новые экранные координаты
-        FVector2D ScreenPositionNewFOV = ScreenCenter + NewOffsetFromCenter;
-
-        // Пересчитываем мировые координаты из новых экранных координат
-        FVector WorldLocationNewFOV;
-        FVector WorldDirectionNewFOV;
-        PlayerController->DeprojectScreenPositionToWorld(ScreenPositionNewFOV.X, ScreenPositionNewFOV.Y, WorldLocationNewFOV, WorldDirectionNewFOV);
-        MuzzleLocation = WorldLocationNewFOV + WorldDirectionNewFOV * (FVector::Dist(WorldLocation, CameraLocation));
-    }
-
-    //MuzzleLocation = GetMesh()->GetSocketLocation("Muzzle");
+    FVector MuzzleLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
     FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
     FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
 
     FHitResult FinalHitResult;
     bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
 
+    
+
     if (!bFinalHit)
     {
+        DrawDebugLine(GetWorld(), MuzzleLocation, FinalEnd, FColor::Red, false, 1.0f, 0, 2.0f);
         return;
     }
 
@@ -125,15 +82,41 @@ void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)
     }
     
     //DrawDebugLine(GetWorld(), Start, End, FColor::Blue, false, 1.0f, 0, 2.0f);
-    DrawDebugLine(GetWorld(), MuzzleLocation, FinalEnd, FColor::Red, false, 1.0f, 0, 2.0f);
+    DrawDebugLine(GetWorld(), MuzzleLocation, FinalHitResult.Location, FColor::Red, false, 1.0f, 0, 2.0f);
 }
 
 void AWeaponBase::FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass)
 {
     if (!ProjectileClass) return;
 
-    FVector SpawnLocation = GetActorLocation();
-    FRotator SpawnRotation = GetActorRotation();
+    FVector SpawnLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
+    FRotator SpawnRotation;
+    {
+        FVector Start = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentLocation();
+        FVector ForwardVector = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentRotation().Vector();
+        FVector End = Start + (ForwardVector * 5000.0f);
+
+        FHitResult HitResult;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+        Params.AddIgnoredActor(GetOwner());
+
+        bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
+
+
+        End = bHit ? HitResult.ImpactPoint : End;
+
+        FVector MuzzleLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
+        FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
+        FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
+
+        FHitResult FinalHitResult;
+        bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
+
+        FVector TargetLocation = bFinalHit ? FinalHitResult.Location : End;
+
+        SpawnRotation = FRotationMatrix::MakeFromX(TargetLocation - SpawnLocation).Rotator();
+    }
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = GetOwner();

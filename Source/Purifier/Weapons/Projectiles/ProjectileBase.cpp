@@ -19,6 +19,7 @@ void AProjectileBase::BeginPlay()
 {
     Super::BeginPlay();
 
+    CollisionComponent = GetComponentByClass<UPrimitiveComponent>();
     if (CollisionComponent)
     {
         CollisionComponent->OnComponentHit.AddDynamic(this, &AProjectileBase::OnHit);

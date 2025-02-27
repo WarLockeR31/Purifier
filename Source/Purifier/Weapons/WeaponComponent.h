@@ -12,20 +12,10 @@ class PURIFIER_API UWeaponComponent : public UActorComponent
 {
     GENERATED_BODY()
 
-public:
-    UWeaponComponent();
+protected:
+    UPROPERTY(VisibleAnywhere, Category = "Weapons")
+    AActor* Owner;
 
-    virtual void BeginPlay() override;
-
-    void FirePrimary();
-    void FireSecondary();
-    void SelectWeapon(int32 WeaponIndex);
-
-    UFUNCTION(BlueprintCallable, Category = "Weapons")
-    void SetRaycastStartPoint(USceneComponent* NewPoint);
-    USceneComponent* GetRaycastStartPoint();
-
-private:
     UPROPERTY(EditDefaultsOnly, Category = "Weapons")
     TArray<TSubclassOf<AWeaponBase>> AvailableWeapons;
 
@@ -39,6 +29,31 @@ private:
 
     UPROPERTY(EditDefaultsOnly, Category = "Weapons")
     USkeletalMeshComponent* OwnerMesh;
+
+
+
+public:
+    UWeaponComponent();
+
+    virtual void BeginPlay() override;
+
+    void FirePrimary();
+    void FireSecondary();
+    void SelectWeapon(int32 WeaponIndex);
+
+    UFUNCTION(BlueprintCallable, Category = "Weapons")
+    void SetRaycastStartPoint(USceneComponent* NewPoint);
+    USceneComponent* GetRaycastStartPoint();
+
+    UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Weapons")
+    FVector CorrectRaycastPosition(FVector OldPosition) const;
+
+protected:
+    virtual FVector CorrectRaycastPosition_Implementation(FVector OldLocation) const;
+
+
+private:
+    
 
     void EquipWeapon(AWeaponBase* NewWeapon);
 };

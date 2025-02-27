@@ -14,7 +14,7 @@ void UWeaponComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    AActor* Owner = GetOwner();
+    Owner = GetOwner();
     if (Owner)
     {
         OwnerMesh = Owner->FindComponentByClass<USkeletalMeshComponent>();
@@ -79,3 +79,10 @@ USceneComponent* UWeaponComponent::GetRaycastStartPoint()
 {
     return RaycastStartPoint;
 }
+
+FVector UWeaponComponent::CorrectRaycastPosition_Implementation(FVector OldLocation) const
+{
+    return OldLocation;
+}
+
+

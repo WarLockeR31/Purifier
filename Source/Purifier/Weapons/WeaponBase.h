@@ -59,15 +59,17 @@ protected:
     class UWeaponComponent* OwnerWeaponComponent;
 
 
-
+public:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FireRaycast(const FDamageInfo& Damage);
-    virtual void FireRaycast_Implementation(const FDamageInfo& Damage);
 
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FireProjectile(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
+   
+private:
+    virtual void FireRaycast_Implementation(const FDamageInfo& Damage);
     virtual void FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
-
+    
     //Getters
 public:
     UFUNCTION(BlueprintCallable, Category = "Weapon")

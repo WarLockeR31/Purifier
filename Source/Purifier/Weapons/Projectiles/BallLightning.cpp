@@ -22,6 +22,7 @@ void ABallLightning::BeginPlay()
 
 void ABallLightning::OnHit_Implementation(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
+    UE_LOG(LogTemp, Warning, TEXT("AAAAAAAAAAAAAAA"));
     Destroy();
 }
 
@@ -57,11 +58,7 @@ void ABallLightning::ApplyLightningDamage()
             AActor* HitActor = Hit.GetActor();
             if (HitActor && HitActor->Implements<UDamagable>())
             {
-                IDamagable* DamagableActor = Cast<IDamagable>(HitActor);
-                if (DamagableActor)
-                {
-                    DamagableActor->TakeDamage(DamageInfo);
-                }
+                IDamagable::Execute_TakeDamage(HitActor, DamageInfo);
             }
         }
     }

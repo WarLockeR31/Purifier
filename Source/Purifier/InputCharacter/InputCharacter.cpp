@@ -11,7 +11,7 @@
 #include <Kismet/KismetMathLibrary.h>
 #include <Purifier/Dash/BaseDashComponent.h>
 #include <Purifier/InputCharacter/HandSwayComponent.h>
-#include "Purifier/Weapons/WeaponComponent.h"
+#include "InputCharacterWeaponComponent.h"
 #include "InputCharacterMovementComponent.h"
 
 
@@ -29,7 +29,7 @@ AInputCharacter::AInputCharacter()
 
 	HandSwayComponent = CreateDefaultSubobject<UHandSwayComponent>("HandSway");
 	WallRunAttachCameraRollTimeline = CreateDefaultSubobject<UTimelineComponent>("CameraRollTimeline");
-	WeaponComponent = CreateDefaultSubobject<UWeaponComponent>("Weapon");
+	WeaponComponent = CreateDefaultSubobject<UInputCharacterWeaponComponent>("Weapon");
 	WeaponComponent->SetRaycastStartPoint(Camera);
 	
 	InputCharacterMovementComponent = Cast<UInputCharacterMovementComponent>(GetCharacterMovement());
@@ -164,7 +164,7 @@ void AInputCharacter::CancelDash()
 	}
 }
 
-UInputCharacterMovementComponent* AInputCharacter::GetInputCharacterMovement()
+UInputCharacterMovementComponent* AInputCharacter::GetInputCharacterMovement() const
 {
 	return InputCharacterMovementComponent;
 }
