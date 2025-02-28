@@ -118,9 +118,12 @@ void UInputCharacterMovementComponent::PhysCustom(float deltaTime, int32 Iterati
 	{
 	case CMOVE_Dash:
 		SafeMoveUpdatedComponent(Velocity * deltaTime, UpdatedComponent->GetComponentQuat(), true, DashHit);
-		if (DashHit.IsValidBlockingHit() && ((FVector::VectorPlaneProject(Velocity, DashHit.Normal).GetSafeNormal() | Velocity.GetSafeNormal()) >= FMath::Cos(FMath::DegreesToRadians(MaxWallTurnAngle))))
+		if (DashHit.IsValidBlockingHit())
 		{
-			SlideAlongSurface(Velocity * deltaTime, 1.f - DashHit.Time, DashHit.Normal, DashHit, true);
+			if (((FVector::VectorPlaneProject(Velocity, DashHit.Normal).GetSafeNormal() | Velocity.GetSafeNormal()) >= FMath::Cos(FMath::DegreesToRadians(MaxWallTurnAngle))))
+				SlideAlongSurface(Velocity * deltaTime, 1.f - DashHit.Time, DashHit.Normal, DashHit, true);
+			else
+				InputCharacterOwner->CancelDash();
 		}
 		break;
 	case CMOVE_WallRun:
