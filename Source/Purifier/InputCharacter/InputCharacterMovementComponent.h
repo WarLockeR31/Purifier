@@ -53,7 +53,7 @@ class PURIFIER_API UInputCharacterMovementComponent : public UCharacterMovementC
 
     bool Safe_bWallRunIsLeft;
 
-    bool bCanWallRunSameSide;
+    bool bCanWallRunSameSide = true;
 
     float TimeFromStart;
 
