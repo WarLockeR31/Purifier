@@ -66,10 +66,10 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
     void FireProjectile(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
    
-private:
+protected:
     virtual void FireRaycast_Implementation(const FDamageInfo& Damage);
     virtual void FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass);
-    
+    virtual bool FindTargetLocation(FVector &TargetLocation, FHitResult &FinalHitResult) const;
     //Getters
 public:
     UFUNCTION(BlueprintCallable, Category = "Weapon")

@@ -46,43 +46,22 @@ void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)
 {
     if (!OwnerWeaponComponent) return;
 
-    FVector Start = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentLocation();
-    FVector ForwardVector = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentRotation().Vector();
-    FVector End = Start + (ForwardVector * 5000.0f);
-
-    FHitResult HitResult;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
-    Params.AddIgnoredActor(GetOwner());
-
-    bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
-    
-
-    End = bHit ? HitResult.ImpactPoint : End;
 
     FVector MuzzleLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
-    FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
-    FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
-
-    FHitResult FinalHitResult;
-    bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
-
     
+    FVector TargetLocation; FHitResult HitResult;
 
-    if (!bFinalHit)
+    if (FindTargetLocation(TargetLocation, HitResult))
     {
-        DrawDebugLine(GetWorld(), MuzzleLocation, FinalEnd, FColor::Red, false, 1.0f, 0, 2.0f);
-        return;
-    }
-
-    AActor* HitActor = FinalHitResult.GetActor();
-    if (HitActor && HitActor->Implements<UDamagable>())
-    {
-        IDamagable::Execute_TakeDamage(HitActor, Damage);
+        AActor* HitActor = HitResult.GetActor();
+        if (HitActor && HitActor->Implements<UDamagable>())
+        {
+            IDamagable::Execute_TakeDamage(HitActor, Damage);
+        }
     }
     
     //DrawDebugLine(GetWorld(), Start, End, FColor::Blue, false, 1.0f, 0, 2.0f);
-    DrawDebugLine(GetWorld(), MuzzleLocation, FinalHitResult.Location, FColor::Red, false, 1.0f, 0, 2.0f);
+    DrawDebugLine(GetWorld(), MuzzleLocation, TargetLocation, FColor::Red, false, 1.0f, 0, 2.0f);
 }
 
 void AWeaponBase::FireProjectile_Implementation(const FDamageInfo& Damage, TSubclassOf<AProjectileBase> ProjectileClass)
@@ -90,33 +69,11 @@ void AWeaponBase::FireProjectile_Implementation(const FDamageInfo& Damage, TSubc
     if (!ProjectileClass) return;
 
     FVector SpawnLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
-    FRotator SpawnRotation;
-    {
-        FVector Start = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentLocation();
-        FVector ForwardVector = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentRotation().Vector();
-        FVector End = Start + (ForwardVector * 5000.0f);
-
-        FHitResult HitResult;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(this);
-        Params.AddIgnoredActor(GetOwner());
-
-        bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
 
 
-        End = bHit ? HitResult.ImpactPoint : End;
-
-        FVector MuzzleLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
-        FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
-        FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
-
-        FHitResult FinalHitResult;
-        bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
-
-        FVector TargetLocation = bFinalHit ? FinalHitResult.Location : End;
-
-        SpawnRotation = FRotationMatrix::MakeFromX(TargetLocation - SpawnLocation).Rotator();
-    }
+    FVector TargetLocation; FHitResult HitResult;
+    FindTargetLocation(TargetLocation, HitResult);
+    FRotator SpawnRotation = FRotationMatrix::MakeFromX(TargetLocation - SpawnLocation).Rotator();
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = GetOwner();
@@ -129,4 +86,29 @@ void AWeaponBase::FireProjectile_Implementation(const FDamageInfo& Damage, TSubc
         Projectile->InitializeProjectile(Damage); 
         Projectile->FinishSpawning(FTransform(SpawnRotation, SpawnLocation));
     }
+}
+
+bool AWeaponBase::FindTargetLocation(FVector& TargetLocation, FHitResult& FinalHitResult) const 
+{
+    FVector Start = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentLocation();
+    FVector ForwardVector = OwnerWeaponComponent->GetRaycastStartPoint()->GetComponentRotation().Vector();
+    FVector End = Start + (ForwardVector * 5000.0f);
+
+    FHitResult HitResult;
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+    Params.AddIgnoredActor(GetOwner());
+
+    bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
+
+
+    End = bHit ? HitResult.ImpactPoint : End;
+
+    FVector MuzzleLocation = OwnerWeaponComponent->CorrectRaycastPosition(WeaponMesh->GetSocketLocation("Muzzle"));
+    FVector MuzzleDirection = (End - MuzzleLocation).GetSafeNormal();
+    FVector FinalEnd = MuzzleLocation + (MuzzleDirection * 5000.0f);
+
+    bool bFinalHit = GetWorld()->LineTraceSingleByChannel(FinalHitResult, MuzzleLocation, FinalEnd, ECC_Visibility, Params);
+    TargetLocation = bFinalHit ? FinalHitResult.Location : End;
+    return bFinalHit;
 }
