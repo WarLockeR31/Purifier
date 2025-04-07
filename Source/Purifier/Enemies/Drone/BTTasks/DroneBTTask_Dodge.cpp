@@ -41,7 +41,8 @@ EBTNodeResult::Type UDroneBTTask_Dodge::ExecuteTask(UBehaviorTreeComponent& Owne
     
     Drone->SetDashDirection(DodgeDirection);
     Drone->GetDash()->StartDash();
-
+    
+    BlackboardComp->SetValueAsFloat("DodgeCooldown", DodgeCooldown);
 
     return EBTNodeResult::Succeeded;
 }

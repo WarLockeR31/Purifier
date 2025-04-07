@@ -4,45 +4,67 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "Purifier/Enemies/Drone/Drone.h"
+#include "Purifier/Enemies/Drone/DroneAIController.h"
 
 UDroneBTTask_Idle::UDroneBTTask_Idle()
 {
     NodeName = TEXT("Idle With Flocking");
+    bNotifyTick = true;
 }
 
 EBTNodeResult::Type UDroneBTTask_Idle::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-    // Получаем AI Controller и Pawn
     AAIController* AICon = OwnerComp.GetAIOwner();
     if (!AICon)
     {
         return EBTNodeResult::Failed;
     }
 
-    APawn* AIPawn = AICon->GetPawn();
-    if (!AIPawn)
+    ADroneAIController* DroneAICon = Cast<ADroneAIController>(AICon);
+    if (!DroneAICon)
     {
         return EBTNodeResult::Failed;
     }
 
-    ADrone* Drone = Cast<ADrone>(AIPawn);
+    APawn* Pawn = AICon->GetPawn();
+    if (!Pawn)
+    {
+        return EBTNodeResult::Failed;
+    }
+
+    ADrone* Drone = Cast<ADrone>(Pawn);
     if (!Drone)
     {
         return EBTNodeResult::Failed;
     }
 
-    // Получаем целевую позицию из Blackboard (ключ TargetLocation)
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     FVector TargetLocation = BlackboardComp->GetValueAsVector("TargetLocation");
 
-    // Если дрон уже близко к цели, считаем задачу выполненной
-    if (FVector::Dist(Drone->GetActorLocation(), TargetLocation) <= AcceptanceRadius)
-    {
-        return EBTNodeResult::Succeeded;
-    }
+    FTimerHandle TimerHandle;
+    FTimerDelegate TimerDelegate;
+    TimerDelegate.BindLambda([this, &OwnerComp]() { FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); });
+    OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, IdleDuration, false);
 
-    FVector FlockingVector = Drone->GetFlockingVector(OwnerComp.GetWorld()->GetDeltaSeconds());
-    Drone->MoveToLocationWithFlocking(TargetLocation, FlockingVector);
+    return EBTNodeResult::InProgress;
+}
 
-    return EBTNodeResult::Succeeded;
+void UDroneBTTask_Idle::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaTime)
+{
+    AAIController* AICon = OwnerComp.GetAIOwner();
+    ADroneAIController* DroneAICon = Cast<ADroneAIController>(AICon);
+
+    APawn* AIPawn = AICon->GetPawn();
+
+    ADrone* Drone = Cast<ADrone>(AIPawn);
+
+    UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
+
+    FVector TargetLocation = BlackboardComp->GetValueAsVector("TargetLocation");
+    DroneAICon->RotateTowards(TargetLocation, DeltaTime);
+
+
+    const float Distance = FVector::Distance(Drone->GetActorLocation(), TargetLocation);
+
+    DroneAICon->IdleWithFlocking(DeltaTime);
 }

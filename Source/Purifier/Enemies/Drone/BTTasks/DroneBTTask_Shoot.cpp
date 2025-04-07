@@ -59,4 +59,6 @@ void UDroneBTTask_Shoot::Shoot(UBehaviorTreeComponent& OwnerComp)
     {
         UGameplayStatics::ApplyDamage(Hit.GetActor(), Damage, AICon, AIPawn, nullptr);
     }
+
+    BlackboardComp->SetValueAsFloat("ShootCooldown", ShootCooldown);
 }

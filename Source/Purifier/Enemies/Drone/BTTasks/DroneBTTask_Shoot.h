@@ -23,6 +23,9 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Shoot")
     float ChargeTime = 0.3f;
 
+    UPROPERTY(EditAnywhere, Category = "Dodge")
+    float ShootCooldown = 1.0f;
+
     UPROPERTY(EditAnywhere, Category = "Shoot")
     float Damage = 10.f;
 

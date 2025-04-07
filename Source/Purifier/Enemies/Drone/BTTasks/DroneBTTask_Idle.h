@@ -20,4 +20,15 @@ protected:
     /** Допустимый радиус для окончания движения */
     UPROPERTY(EditAnywhere, Category = "Movement")
     float AcceptanceRadius = 100.f;
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float DesiredAltitude = 1500.f;
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float DesiredAltitudeWithoutFloor = 1000.f;
+
+    UPROPERTY(EditAnywhere, Category = "Movement")
+    float IdleDuration = 2.f;
+
+    virtual void TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaTime) override;
 };
