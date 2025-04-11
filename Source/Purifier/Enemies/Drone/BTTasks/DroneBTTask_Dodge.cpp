@@ -47,7 +47,7 @@ EBTNodeResult::Type UDroneBTTask_Dodge::ExecuteTask(UBehaviorTreeComponent& Owne
     FTimerHandle TimerHandle;
     FTimerDelegate TimerDelegate;
     TimerDelegate.BindLambda([this, &OwnerComp]() {
-        OwnerComp.GetBlackboardComponent()->SetValueAsBool("FlockDodgeInitiated", false);;
+        OwnerComp.GetBlackboardComponent()->SetValueAsBool("FlockDodgeInitiated", false);
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); 
     });
     OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, AfterDodgeWaitTime, false);

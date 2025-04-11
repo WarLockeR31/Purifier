@@ -21,6 +21,10 @@ AWeaponBase::AWeaponBase()
 
 void AWeaponBase::FirePrimary_Implementation()
 {
+    if (bPrimaryFireOnCooldown)
+        return;
+    bPrimaryFireOnCooldown = true;
+
     if (PrimaryFireMode == EFireMode::Raycast)
     {
         FireRaycast(PrimaryDamage);
@@ -29,10 +33,19 @@ void AWeaponBase::FirePrimary_Implementation()
     {
         FireProjectile(PrimaryDamage, PrimaryProjectileClass);
     }
+
+    FTimerHandle TimerHandle;
+    FTimerDelegate TimerDelegate;
+    TimerDelegate.BindLambda([this]() { bPrimaryFireOnCooldown = false; });
+    GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, PrimaryFireCooldown, false);
 }
 
 void AWeaponBase::FireSecondary_Implementation()
 {
+    if (bSecondaryFireOnCooldown)
+        return;
+    bSecondaryFireOnCooldown = true;
+
     if (SecondaryFireMode == EFireMode::Raycast)
     {
         FireRaycast(SecondaryDamage);
@@ -41,6 +54,11 @@ void AWeaponBase::FireSecondary_Implementation()
     {
         FireProjectile(SecondaryDamage, SecondaryProjectileClass);
     }
+
+    FTimerHandle TimerHandle;
+    FTimerDelegate TimerDelegate;
+    TimerDelegate.BindLambda([this]() { bSecondaryFireOnCooldown = false; });
+    GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, SecondaryFireCooldown, false);
 }
 
 void AWeaponBase::FireRaycast_Implementation(const FDamageInfo& Damage)

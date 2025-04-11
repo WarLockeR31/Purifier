@@ -37,7 +37,13 @@ protected:
     EFireMode PrimaryFireMode;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+    float PrimaryFireCooldown;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
     EFireMode SecondaryFireMode;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+    float SecondaryFireCooldown;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon", meta = (EditCondition = "PrimaryFireMode == EFireMode::Projectile", EditConditionHides))
     TSubclassOf<AProjectileBase> PrimaryProjectileClass;
@@ -58,6 +64,11 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
     class UWeaponComponent* OwnerWeaponComponent;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    bool bPrimaryFireOnCooldown = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    bool bSecondaryFireOnCooldown = false;
 
 public:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Weapon")
