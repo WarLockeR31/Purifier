@@ -33,13 +33,11 @@ void ADroneAIController::IdleWithFlocking(float DeltaTime)
     FVector TotalForce;
     if ((Separation + Cohesion).Size() < IdleAcceptance)
     {
-        TotalForce = Avoidance;
-    }
-    else
-    {
-        TotalForce = Separation + Cohesion + Avoidance;
+        Separation = FVector::Zero();
+        Cohesion = FVector::Zero();
     }
 
+    TotalForce = Separation + Cohesion + Avoidance;
     TotalForce = TotalForce.GetClampedToMaxSize(MaxForce);
 
 
@@ -72,7 +70,7 @@ void ADroneAIController::RotateTowards(const FVector& TargetPoint, float DeltaTi
     FRotator TargetRotation = Direction.Rotation();
     //UE_LOG(LogTemp, Warning, TEXT("TotalVel: %s"), *TargetRotation.ToString());
     
-    ControlledDrone->SetActorRotation(FMath::RInterpTo(ControlledDrone->GetActorRotation(), TargetRotation, DeltaTime, 7.0f));
+    SetControlRotation(FMath::RInterpTo(GetControlRotation(), TargetRotation, DeltaTime, 7.0f));
   
     //ControlledDrone->SetActorRotation(TargetRotation);
     // SetControlRotation(TargetRotation);

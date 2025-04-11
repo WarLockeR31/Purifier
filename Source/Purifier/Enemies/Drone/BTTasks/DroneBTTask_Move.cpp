@@ -66,11 +66,11 @@ void UDroneBTTask_Move::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeM
 
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
 
-    if (BlackboardComp->GetValueAsBool("TargetIsVisible"))
+    /*if (BlackboardComp->GetValueAsBool("TargetIsVisible"))
     {
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
-    }
+    }*/
 
     FVector TargetLocation = BlackboardComp->GetValueAsVector("TargetLocation");
     DroneAICon->RotateTowards(TargetLocation, DeltaTime);
@@ -96,11 +96,11 @@ void UDroneBTTask_Move::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeM
 
     const float Distance = FVector::Distance(Drone->GetActorLocation(), TargetLocation);
 
-    if (Distance <= AcceptanceRadius)
+    /*if (Distance <= AcceptanceRadius)
     {
         FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
         return;
-    }
+    }*/
 
     // Обновляем движение каждый кадр
     DroneAICon->MoveToLocationWithFlocking(TargetLocation, DeltaTime);

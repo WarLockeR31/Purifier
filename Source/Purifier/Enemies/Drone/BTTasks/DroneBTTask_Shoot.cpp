@@ -25,6 +25,8 @@ EBTNodeResult::Type UDroneBTTask_Shoot::ExecuteTask(UBehaviorTreeComponent& Owne
     FTimerDelegate TimerDelegate;
     TimerDelegate.BindLambda([this, &OwnerComp]() { Shoot(OwnerComp); });
     OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, ChargeTime, false);
+
+    BlackboardComp->SetValueAsFloat("ShootCooldown", ShootCooldown + ChargeTime);
     
     return EBTNodeResult::Succeeded;
 }
@@ -59,6 +61,4 @@ void UDroneBTTask_Shoot::Shoot(UBehaviorTreeComponent& OwnerComp)
     {
         UGameplayStatics::ApplyDamage(Hit.GetActor(), Damage, AICon, AIPawn, nullptr);
     }
-
-    BlackboardComp->SetValueAsFloat("ShootCooldown", ShootCooldown);
 }

@@ -47,6 +47,8 @@ public:
 public:
     //Getters
     class UBaseDashComponent* GetDash();
+
+    UFUNCTION(BlueprintCallable)
     TArray<ADrone*> GetAllDrones() { return AllDrones; };
     class USphereComponent* GetAvoidanceCollider() const;
 

@@ -23,6 +23,12 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Dodge")
     float DodgeCooldown = 1.0f;
 
+    UPROPERTY(EditAnywhere, Category = "Dodge")
+    float DodgePrepareTime = 0.2f;
+
+    UPROPERTY(EditAnywhere, Category = "Dodge")
+    float AfterDodgeWaitTime = 0.5f;
+
     UFUNCTION()
     bool ShouldDodgeRight(FVector PlayerLocation, FVector PlayerViewDirection, FVector DroneLocation) const;
 };

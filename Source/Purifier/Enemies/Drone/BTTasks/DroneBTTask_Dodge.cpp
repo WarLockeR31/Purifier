@@ -30,6 +30,8 @@ EBTNodeResult::Type UDroneBTTask_Dodge::ExecuteTask(UBehaviorTreeComponent& Owne
     }
 
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
+    BlackboardComp->SetValueAsFloat("DodgeCooldown", DodgeCooldown);
+    
     
     bool shouldDodgeRight = ShouldDodgeRight(
         BlackboardComp->GetValueAsVector("TargetLocation"),
@@ -42,9 +44,16 @@ EBTNodeResult::Type UDroneBTTask_Dodge::ExecuteTask(UBehaviorTreeComponent& Owne
     Drone->SetDashDirection(DodgeDirection);
     Drone->GetDash()->StartDash();
     
-    BlackboardComp->SetValueAsFloat("DodgeCooldown", DodgeCooldown);
+    FTimerHandle TimerHandle;
+    FTimerDelegate TimerDelegate;
+    TimerDelegate.BindLambda([this, &OwnerComp]() {
+        OwnerComp.GetBlackboardComponent()->SetValueAsBool("FlockDodgeInitiated", false);;
+        FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); 
+    });
+    OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, AfterDodgeWaitTime, false);
+    
 
-    return EBTNodeResult::Succeeded;
+    return EBTNodeResult::InProgress;
 }
 
 bool UDroneBTTask_Dodge::ShouldDodgeRight(FVector TargetLocation, FVector TargetViewDirection, FVector DroneLocation) const

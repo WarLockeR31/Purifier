@@ -41,10 +41,10 @@ EBTNodeResult::Type UDroneBTTask_Idle::ExecuteTask(UBehaviorTreeComponent& Owner
     UBlackboardComponent* BlackboardComp = OwnerComp.GetBlackboardComponent();
     FVector TargetLocation = BlackboardComp->GetValueAsVector("TargetLocation");
 
-    FTimerHandle TimerHandle;
+    /*FTimerHandle TimerHandle;
     FTimerDelegate TimerDelegate;
     TimerDelegate.BindLambda([this, &OwnerComp]() { FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded); });
-    OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, IdleDuration, false);
+    OwnerComp.GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, IdleDuration, false);*/
 
     return EBTNodeResult::InProgress;
 }
