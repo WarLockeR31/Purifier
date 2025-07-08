@@ -54,7 +54,7 @@ void AInputCharacter::BeginPlay()
 void AInputCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Value: %d"), JumpCurrentCount));
+	//GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Value: %d"), JumpCurrentCount));
 	
 }
 
@@ -159,7 +159,7 @@ void AInputCharacter::CancelDash()
 {
 	if (DashComponent && !DashComponent->IsInstantDash())
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Dash Cancelling");
+		//GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Dash Cancelling");
 		DashComponent->CancelDash();
 	}
 }

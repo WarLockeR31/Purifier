@@ -58,9 +58,6 @@ void ADroneAIController::MoveToLocationWithFlocking(FVector& TargetLocation, flo
     //UE_LOG(LogTemp, Warning, TEXT("TotalVel: %s"), *TotalVelocity.ToString());
 
     ControlledDrone->AddMovementInput(TotalVelocity.GetSafeNormal());
-    //ControlledDrone->GetMovementComponent()->MoveUpdatedComponent(TotalVelocity, ControlledDrone->GetMovementComponent()->UpdatedComponent->GetComponentRotation(), true);
-    //ControlledDrone->GetMovementComponent()->Velocity = TotalVelocity;
-    //ControlledDrone->GetMovementComponent()->UpdateComponentVelocity();
 }
 
 void ADroneAIController::RotateTowards(const FVector& TargetPoint, float DeltaTime)
@@ -103,7 +100,7 @@ FVector ADroneAIController::CalculateSeparationForce(const TArray<ADrone*>& Neig
         float Distance = ToNeighbor.Size();
         if (Distance > 0)
         {
-            Force += ToNeighbor.GetSafeNormal() / Distance; // Чем ближе, тем сильнее отталкивание
+            Force += ToNeighbor.GetSafeNormal() / Distance; 
         }
     }
 
@@ -146,7 +143,6 @@ FVector ADroneAIController::CalculateObstacleAvoidanceForce() const
     FVector Start = GetPawn()->GetActorLocation();
     FRotator VelocityRotation = ControlledDrone->GetMovementComponent()->Velocity.ToOrientationRotator();
 
-    // Проверка лучей: вперед, влево, вправо, вверх, вниз
     TArray<FVector> RayDirections = {
         VelocityRotation.Vector(),
         (VelocityRotation + FRotator(0, -30, 0)).Vector(),
@@ -162,22 +158,12 @@ FVector ADroneAIController::CalculateObstacleAvoidanceForce() const
     TArray <AActor*> ActorsToIgnore;
     ActorsToIgnore.Add(GetPawn());
 
+    float RayLength = AvoidanceRayLength * ControlledDrone->GetMovementComponent()->Velocity.Length() / ControlledDrone->GetMovementComponent()->GetMaxSpeed();
+
     for (FVector& Dir : RayDirections)
     {
-        FVector End = Start + Dir * AvoidanceRayLength;
+        FVector End = Start + Dir * RayLength;
         FHitResult Hit;
-
-        //// 1. Рисуем луч
-        //DrawDebugLine(
-        //    GetWorld(),
-        //    Start,
-        //    End,
-        //    FColor::Green,
-        //    false, // bPersistentLines (не сохранять между кадрами)
-        //    0,
-        //    0, // DepthPriority (0 = обычная)
-        //    2
-        //);
 
         bool bHit = UKismetSystemLibrary::SphereTraceSingle(
             GetWorld(), 
@@ -194,9 +180,8 @@ FVector ADroneAIController::CalculateObstacleAvoidanceForce() const
 
         if (bHit)
         {
-            // Рассчитать силу избегания (перпендикулярно нормали препятствия)
             FVector AvoidDir = Hit.ImpactNormal;
-            Force += AvoidDir * (1.0f - Hit.Time); // Hit.Time = [0,1]
+            Force += AvoidDir * (1.0f - Hit.Time); 
         }
     }
 

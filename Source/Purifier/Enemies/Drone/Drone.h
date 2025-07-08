@@ -24,15 +24,17 @@ class PURIFIER_API ADrone : public APawn, public IDashable
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
     class USphereComponent* SphereComponent;
 
+    
+
 protected:
     UPROPERTY(EditAnywhere, Category = "Flocking")
     float Speed = 200.f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+    UPROPERTY(VisibleAnywhere, Category = "Components")
     class UFloatingPawnMovement* MovementComponent;
 
     //Components
-    UPROPERTY(VisibleAnywhere, Category = "Dash")
+    UPROPERTY(VisibleAnywhere, Category = "Components")
     class UBaseDashComponent* DashComponent;
 
 public:

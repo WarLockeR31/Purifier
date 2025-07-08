@@ -30,24 +30,23 @@ FVector UInputCharacterWeaponComponent::CorrectRaycastPosition_Implementation(FV
 {
     FVector CameraLocation = OwnerInputCharacterCamera->GetComponentLocation();
     
-    // Проецируем мировые координаты в экранные (старый FOV)
-    FVector2D ScreenPositionOldFOV;  // Экранные координаты для старого FOV
+    // Проецируем мировые координаты в экранные (основной FOV)
+    FVector2D ScreenPositionOldFOV;  
     OwnerPlayerController->ProjectWorldLocationToScreen(OldLocation, ScreenPositionOldFOV);
 
-    // Смещение точки относительно центра экрана (в пикселях)
+    // Смещение точки относительно центра экрана 
     int32 ScreenWidth, ScreenHeight;
     OwnerPlayerController->GetViewportSize(ScreenWidth, ScreenHeight);
     FVector2D ScreenCenter = FVector2D(ScreenWidth / 2.0f, ScreenHeight / 2.0f);
     FVector2D OffsetFromCenter = ScreenPositionOldFOV - ScreenCenter;
 
-    // Пересчет FOV
-    float OldFOV = OwnerInputCharacterCamera->FieldOfView;  // Текущий FOV
-    float NewFOV = OwnerInputCharacterCamera->FirstPersonFieldOfView;  // Новый FOV
+    // FOV
+    float OldFOV = OwnerInputCharacterCamera->FieldOfView;  
+    float NewFOV = OwnerInputCharacterCamera->FirstPersonFieldOfView;  
 
     // Вычисляем коэффициент масштабирования FOV
     float OldFovRad = FMath::DegreesToRadians(OldFOV);
     float NewFovRad = FMath::DegreesToRadians(NewFOV);
-
     float ScaleFactor = FMath::Tan(OldFovRad / 2.0f) / FMath::Tan(NewFovRad / 2.0f);
 
     // Масштабируем смещение от центра экрана
@@ -56,7 +55,7 @@ FVector UInputCharacterWeaponComponent::CorrectRaycastPosition_Implementation(FV
     // Вычисляем новые экранные координаты
     FVector2D ScreenPositionNewFOV = ScreenCenter + NewOffsetFromCenter;
 
-    // Пересчитываем мировые координаты из новых экранных координат
+    // Проецируем экранные координаты в мировые
     FVector WorldLocationNewFOV;
     FVector WorldDirectionNewFOV;
     OwnerPlayerController->DeprojectScreenPositionToWorld(ScreenPositionNewFOV.X, ScreenPositionNewFOV.Y, WorldLocationNewFOV, WorldDirectionNewFOV);

@@ -199,7 +199,7 @@ bool UInputCharacterMovementComponent::TryWallRun()
 		"BlockAll",
 		false,
 		ActorsToIgnore,
-		EDrawDebugTrace::ForDuration,
+		EDrawDebugTrace::None,
 		OutHits,
 		true
 	);
@@ -230,7 +230,7 @@ bool UInputCharacterMovementComponent::TryWallRun()
 	Velocity = ProjectedVelocity;
 	Velocity.Z = FMath::Clamp(Velocity.Z, 0.f, MaxVerticalWallRunSpeed);
 	SetMovementMode(MOVE_Custom, CMOVE_WallRun);
-	GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Starting WallRun"); 
+	//GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Starting WallRun"); 
 	return true;
 }
 
@@ -252,6 +252,8 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 	{
 		return;
 	}
+
+	//Стандартные проверки из ChraracterMovement
 	if (!CharacterOwner || (!CharacterOwner->Controller && !bRunPhysicsWithNoController && !HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() && (CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)))
 	{
 		Acceleration = FVector::ZeroVector;
@@ -278,7 +280,7 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 		if (!WallHit.IsValidBlockingHit() || bWantsToPullAway)
 		{
 			Velocity += WallHit.ImpactNormal * WallJumpOffForce;
-			GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Pull Away");
+			//GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Pull Away");
 			SetMovementMode(MOVE_Falling);
 			StartNewPhysics(remainingTime, Iterations);
 
@@ -306,7 +308,7 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 		if (Velocity.SizeSquared2D() < pow(MinWallRunSpeed, 2) || Velocity.Z < -MaxVerticalWallRunSpeed)
 		{
 			Velocity += WallHit.ImpactNormal * WallJumpOffForce;
-			GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Bad Velocity");
+			//GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Bad Velocity");
 			SetMovementMode(MOVE_Falling);
 			StartNewPhysics(remainingTime, Iterations);
 
@@ -353,10 +355,10 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 
 		FVector StartD = UpdatedComponent->GetComponentLocation();  
 		FVector EndD = StartD + Velocity * 0.1f; 
-		DrawDebugLine(GetWorld(), StartD, EndD, FColor::Blue, false, 0.f, 0, 2.0f);
+		//DrawDebugLine(GetWorld(), StartD, EndD, FColor::Blue, false, 0.f, 0, 2.0f);
 	}
 
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("Speed: %.2f"), Velocity.Length()));
+	//GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("Speed: %.2f"), Velocity.Length()));
 
 	FVector Start = UpdatedComponent->GetComponentLocation();
 	FVector CastDirection = Velocity.GetSafeNormal2D().Cross(FVector(0.f, 0.f, Safe_bWallRunIsLeft ? 1.f : -1.f));
@@ -371,7 +373,7 @@ void UInputCharacterMovementComponent::PhysWallRun(float deltaTime, int32 Iterat
 	{
 		Velocity += WallHit.ImpactNormal * WallJumpOffForce;
 		SetMovementMode(MOVE_Falling);
-		GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Too close to ground / No wall / Too low speed");
+		//GEngine->AddOnScreenDebugMessage(-1, 2, FColor::Yellow, "Too close to ground / No wall / Too low speed");
 	}
 }
 #pragma endregion Wall Run

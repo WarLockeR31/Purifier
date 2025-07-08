@@ -28,7 +28,7 @@ EBTNodeResult::Type UDroneBTTask_Shoot::ExecuteTask(UBehaviorTreeComponent& Owne
 
     BlackboardComp->SetValueAsFloat("ShootCooldown", ShootCooldown + ChargeTime);
     
-    return EBTNodeResult::Succeeded;
+    return EBTNodeResult::InProgress;
 }
 
 void UDroneBTTask_Shoot::Shoot(UBehaviorTreeComponent& OwnerComp)
@@ -61,4 +61,6 @@ void UDroneBTTask_Shoot::Shoot(UBehaviorTreeComponent& OwnerComp)
     {
         UGameplayStatics::ApplyDamage(Hit.GetActor(), Damage, AICon, AIPawn, nullptr);
     }
+
+    FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 }

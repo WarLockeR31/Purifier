@@ -17,7 +17,6 @@ ADrone::ADrone()
     PrimaryActorTick.bCanEverTick = true;
 
     //bUseControllerRotationYaw = false;
-    MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("MovementComponent"));
     
     SphereComponent = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComponent"));
     SetRootComponent(SphereComponent); 
@@ -25,6 +24,8 @@ ADrone::ADrone()
     AvoidanceCollider = CreateDefaultSubobject<USphereComponent>(TEXT("AvoidanceCollider"));
     AvoidanceCollider->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     AvoidanceCollider->SetHiddenInGame(true);
+
+    MovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("FloatingPawnMovement"));
 }
 
 void ADrone::BeginPlay()
