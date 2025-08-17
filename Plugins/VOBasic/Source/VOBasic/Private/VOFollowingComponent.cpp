@@ -4,6 +4,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DrawDebugHelpers.h"
+#include "DynamicMesh/DynamicMesh3.h"
 #include "Engine/World.h"
 
 // Global debug cvar
@@ -87,63 +88,20 @@ void UVOFollowingComponent::TickComponent(float DeltaTime, enum ELevelTick TickT
             S->QueryNeighbors(this, Pos, Params.NeighborRange, Neis);
 
     // Compute VO velocity
-    const FVector NewVel = ComputeVO(CurVel, DesiredVel, Neis);
-
-    // Acceleration limit
-    FVector OutVel = CurVel;
-    const FVector Delta = NewVel - CurVel;
-    const float MaxDv = Params.MaxAccel * DeltaTime;
-    const float DvLen = Delta.Size2D();
-    if (DvLen > MaxDv && DvLen > KINDA_SMALL_NUMBER)
-        OutVel += Delta.GetSafeNormal2D() * MaxDv;
-    else
-        OutVel = NewVel;
-
-    // Feed to movement
+    const FVector OutVel = ComputeVelocity(CurVel, DesiredVel, Neis);
+	
+    // Move
     if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
     {
-        // RequestDirectMove expects a velocity-like vector (cm/s)
-        Move->RequestDirectMove(OutVel, /*bForceMaxSpeed=*/false);
+        Move->RequestDirectMove(OutVel, false);
     }
 
     // Debug draw
     if (bDebugDraw && CVarVODebugShow.GetValueOnAnyThread() != 0)
     {
     	FlushPersistentDebugLines(GetWorld());
-    	DrawVOCones(Pos, Neis);
+    	DrawVOConesTau(Pos, Neis);
     }
-}
-
-// Minimal VO sampling:
-//  - Try desired velocity; if collision within Tau -> try a few rotated directions and reduced speeds; else stop.
-static void GenerateCandidates(const FVector& Desired, float MaxSpeed, int32 AngleSamples, TArray<FVector>& Out)
-{
-    Out.Reset();
-    const FVector2D d2(Desired.X, Desired.Y);
-    const float dLen = d2.Size();
-    const float baseSpd = (dLen > 1.f) ? FMath::Clamp(dLen, 0.f, MaxSpeed) : MaxSpeed;
-
-    // Primary
-    Out.Add(FVector(d2.GetSafeNormal() * baseSpd, 0.f));
-
-    const int32 half = FMath::Max(1, AngleSamples/2);
-    const float step = PI / float(AngleSamples); // up to ~180 deg sweep
-
-    for (int32 i=1; i<=half; ++i)
-    {
-        const float ang = step * i;
-        const float cosA = FMath::Cos(ang), sinA = FMath::Sin(ang);
-        const FVector2D n = d2.IsNearlyZero() ? FVector2D(1,0) : d2.GetSafeNormal();
-        // rotate +/-
-        const FVector2D r1(n.X*cosA - n.Y*sinA, n.X*sinA + n.Y*cosA);
-        const FVector2D r2(n.X*cosA + n.Y*sinA, -n.X*sinA + n.Y*cosA);
-        Out.Add(FVector(r1*baseSpd,0));
-        Out.Add(FVector(r2*baseSpd,0));
-    }
-
-    // Reduced speeds
-    Out.Add(FVector(d2.GetSafeNormal() * (0.75f*baseSpd), 0));
-    Out.Add(FVector(d2.GetSafeNormal() * (0.5f*baseSpd), 0));
 }
 
 static bool AnyCollisionWithinTau(const FVector& vCand3D, const TArray<FVONeighborView>& Neis, float SelfRadius, float Tau)
@@ -156,52 +114,60 @@ static bool AnyCollisionWithinTau(const FVector& vCand3D, const TArray<FVONeighb
     return false;
 }
 
-bool UVOFollowingComponent::WillCollideWithinTau(const FVector2D& pRel, const FVector2D& vRel, float R, float Tau, float* OutTOI) const
+bool UVOFollowingComponent::WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const
 {
-    // Solve |p + t v|^2 = R^2, t in (0, Tau]. If approaching.
-    const float pv = FVector2D::DotProduct(pRel, vRel);
-    if (pv >= 0.f) // moving away or tangent; no future collision
+	// (v_x^2 + v_y^2) * t^2 - 2(v_x * p_x + v_y * p_y) * t + (p_x^2 + p_y^2) = R^2
+	// v.SizeSqr * t^2 - 2 * Dot(p, v) * t + (p.SizeSqr - R^2) = 0 ; t in (0, Tau]
+	
+    const float PV = FVector2D::DotProduct(RelativePosition, RelativeVelocity);
+    if (PV >= 0.f) // Moving away or tangent; 
         return false;
 
-    const float vv = vRel.SizeSquared();
-    const float pp = pRel.SizeSquared();
-    const float R2 = R*R;
+    const float VV = RelativeVelocity.SizeSquared();
+    const float PP = RelativePosition.SizeSquared();
+    const float R2 = Radius*Radius;
 
-    const float a = vv;
-    const float b = 2.f * pv;
-    const float c = pp - R2;
+    const float a = VV;
+    const float b = 2.f * PV;
+    const float c = PP - R2;
 
-    const float disc = b*b - 4.f*a*c;
-    if (disc < 0.f || a < 1e-6f) return false;
+    const float Disc = b*b - 4.f*a*c;
+    if (Disc < 0.f || a < 1e-6f)   // No Collision
+    	return false;
 
-    const float sqrtDisc = FMath::Sqrt(disc);
-    const float t1 = (-b - sqrtDisc) / (2.f*a);
-    const float t2 = (-b + sqrtDisc) / (2.f*a);
+    const float SqrtDisc = FMath::Sqrt(Disc);
+    const float T1 = (-b - SqrtDisc) / (2.f*a);
+    const float T2 = (-b + SqrtDisc) / (2.f*a);
 
-    float tHit = TNumericLimits<float>::Max();
-    if (t1 > 0.f) tHit = t1; else if (t2 > 0.f) tHit = t2; else return false;
+	// Take the smallest collision time
+    float THit = TNumericLimits<float>::Max();   
+    if (T1 > 0.f)
+    	THit = T1;
+	else if (T2 > 0.f)
+		THit = T2;
+	else
+		return false;
 
-    if (tHit <= Tau)
+	// Check if collision happens within time horizon
+    if (THit <= TimeHorizon)
     {
-        if (OutTOI) *OutTOI = tHit;
+        if (OutTOI)
+        	*OutTOI = THit;
         return true;
     }
     return false;
 }
 
-FVector UVOFollowingComponent::ComputeVO(const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis) const
+FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis) const
 {
-    // Gather own state
-    const FVector P = GetOwnerLocation();
+    const FVector actorPos = GetOwnerLocation();
 
-    // First try desired
-    auto Violates = [&](const FVector& v)->bool
+    auto IsForbidden = [&](const FVector2D& vA2D)->bool
     {
-        const FVector2D vA(v.X, v.Y);
         for (const FVONeighborView& N : Neis)
         {
-            const FVector2D pRel(N.Pos.X - P.X, N.Pos.Y - P.Y);
-            const FVector2D vRel = vA - FVector2D(N.Vel.X, N.Vel.Y);
+            const FVector2D pRel(N.Pos.X - actorPos.X, N.Pos.Y - actorPos.Y);
+            const FVector2D vRel = vA2D - FVector2D(N.Vel.X, N.Vel.Y);
             const float R = Params.AgentRadius + N.Radius;
             if (WillCollideWithinTau(pRel, vRel, R, Params.TauHorizon, nullptr))
                 return true;
@@ -209,97 +175,135 @@ FVector UVOFollowingComponent::ComputeVO(const FVector& CurVel, const FVector& D
         return false;
     };
 
-    if (!Violates(DesiredVel))
+    // Try desired
+    if (!IsForbidden(FVector2D(DesiredVel.X, DesiredVel.Y)))
         return DesiredVel.GetClampedToMaxSize2D(Params.MaxSpeed);
 
-    // Generate simple candidates around desired
-    TArray<FVector> Cands;
-    GenerateCandidates(DesiredVel, Params.MaxSpeed, Params.AngleSamples, Cands);
+	const FVector2D vDes2(DesiredVel.X, DesiredVel.Y);
+	
+    /*TArray<FVector> Cands;
+	Cands.Reserve(Neis.Num()*4 + 4);*/
 
-    float BestScore = TNumericLimits<float>::Max();
-    FVector Best = FVector::ZeroVector;
+	// Construct all velocity obstacles
+    TArray<FVOCone> VOCones;
+	VOCones.Reserve(Neis.Num());
 
-    for (const FVector& v : Cands)
-    {
-        bool Bad = false; float MinTOI = Params.TauHorizon;
-        const FVector2D vA(v.X, v.Y);
-        for (const FVONeighborView& N : Neis)
-        {
-            const FVector2D pRel(N.Pos.X - P.X, N.Pos.Y - P.Y);
-            const FVector2D vRel = vA - FVector2D(N.Vel.X, N.Vel.Y);
-            const float R = Params.AgentRadius + N.Radius;
-            float toi = 0.f;
-            if (WillCollideWithinTau(pRel, vRel, R, Params.TauHorizon, &toi))
-            {
-                Bad = true;
-                MinTOI = FMath::Min(MinTOI, toi);
-                break;
-            }
-        }
-        // Objective: prefer non-colliding, then max TOI, then closeness to desired, then small accel change
-        const float desPen = (v - DesiredVel).Size2D();
-        const float accPen = (v - CurVel).Size2D();
-        const float collidePen = Bad ? (10000.f - 1000.f*MinTOI) : 0.f; // any collision is heavy penalty
-        const float J = collidePen + desPen + 0.25f*accPen;
-        if (J < BestScore)
-        {
-            BestScore = J; Best = v;
-        }
-    }
+	for (const FVONeighborView& N : Neis)
+	{
+		float R = Params.AgentRadius + N.Radius;							//Minkowski sum radius
+		FVector2D pRel(N.Pos.X - actorPos.X, N.Pos.Y - actorPos.Y);	//Relative position of a neighbor
 
-    if (Best.IsNearlyZero())
-    {
-        // Last resort: brake
-        return FVector::ZeroVector;
-    }
-    return Best.GetClampedToMaxSize2D(Params.MaxSpeed);
+		
+
+		// TODO: Case when we grazing N
+		if (R*R < pRel.SizeSquared()) 
+		{
+			UE_LOG(LogTemp, Warning, TEXT("R*R < pRel.SizeSquared()"));
+			continue;
+		}
+
+		
+			
+		
+	}
 }
 
-void UVOFollowingComponent::DrawVOCones(const FVector& P, const TArray<FVONeighborView>& Neis) const
+FVOCone UVOFollowingComponent::ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel) const
+{
+	FVOCone Cone;
+
+	Cone.Apex = Vel;
+	
+	float CSizeSquared = C.X * C.X + C.Y * C.Y;
+	float RR = R * R;
+	FVector2D P = RR * FVector2D(C.X, C.Y);
+	FVector2D Q = R * FMath::Sqrt(CSizeSquared - RR) * FVector2D(C.Y, -C.X);
+
+	// Rays
+	// Right -> S=-1 ; Left -> S=1
+	float DenominatorInverted = 1.f / CSizeSquared * R;
+	Cone.RightRayNormal = (P - Q) * DenominatorInverted;
+	Cone.LeftRayNormal	= (P + Q) * DenominatorInverted;
+	Cone.RightRayOffset = -FVector2D::DotProduct(Cone.RightRayNormal, Vel);
+	Cone.LeftRayOffset	= -FVector2D::DotProduct(Cone.LeftRayNormal, Vel);
+
+	// Time Horizon
+	float CSize = FMath::Sqrt(CSizeSquared);
+	FVector2D PTimeHorizon = ((CSize - R) / (CSize * Params.TauHorizon)) * C + Vel;
+	Cone.TimeHorizonNormal = C / CSize;
+	Cone.TimeHorizonOffset = -FVector2D::DotProduct(Cone.TimeHorizonNormal, PTimeHorizon);
+	
+	// Rays apexes
+	float LDeterminantInverted = 1.f / (Cone.TimeHorizonNormal.X * Cone.LeftRayNormal.Y  - Cone.TimeHorizonNormal.Y * Cone.LeftRayNormal.X);
+	Cone.LeftRayApex = FVector2D(
+		(Cone.TimeHorizonNormal.Y * Cone.LeftRayOffset - Cone.LeftRayNormal.Y * Cone.TimeHorizonOffset) * LDeterminantInverted,
+		(Cone.LeftRayNormal.X * Cone.TimeHorizonOffset - Cone.TimeHorizonNormal.X * Cone.LeftRayOffset) * LDeterminantInverted	
+	);
+	Cone.RightRayApex = PTimeHorizon + (PTimeHorizon - Cone.LeftRayApex);
+	
+	return Cone;
+}
+
+void UVOFollowingComponent::DrawVOConesTau(const FVector& P, const TArray<FVONeighborView>& Neis) const
 {
     UWorld* W = GetWorld(); if (!W) return;
 
-    const float L = 150.f; // ray length for visualization
-    const FColor Col(255, 64, 64);
+    const float S = 1.f; // world cm per (cm/s)
+    const int ArcSegs = 16;
+
+    auto Rot2D = [](const FVector2D& v, float a){ const float c=FMath::Cos(a), s=FMath::Sin(a); return FVector2D(v.X*c - v.Y*s, v.X*s + v.Y*c); };
 
     for (const FVONeighborView& N : Neis)
     {
-        const FVector2D d(N.Pos.X - P.X, N.Pos.Y - P.Y);
-        const float D = d.Size();
-        if (D < 1.f) continue;
-        const float r = Params.AgentRadius + N.Radius;
-        const float s = FMath::Clamp(r / D, 0.f, 0.99f);
-        const float alpha = FMath::Asin(s);
-        const FVector2D n = d / D;
+        const FVector2D pRel(N.Pos.X - P.X, N.Pos.Y - P.Y);
+        const float d = pRel.Size(); if (d < 1.f) continue;
+        const float R = Params.AgentRadius + N.Radius;
+        if (R >= d) continue; // degenerate
+        const float alpha = FMath::Asin(FMath::Clamp(R/d, 0.f, 0.999f));
 
-        // rotate n by +/- alpha in XY plane
-        const float c = FMath::Cos(alpha), sA = FMath::Sin(alpha);
-        const FVector2D left ( n.X*c - n.Y*sA, n.X*sA + n.Y*c );
-        const FVector2D right( n.X*c + n.Y*sA, -n.X*sA + n.Y*c );
+        // Velocity-space quantities
+        const FVector2D vB(N.Vel.X, N.Vel.Y);    // apex (neighbor's velocity)
+        const float tau = FMath::Max(0.001f, Params.TauHorizon);
+        const FVector2D Cc = vB - pRel / tau;    // circle center for TOI=tau
+        const float rTau = R / tau;
+        const float dTau = (Cc - vB).Size();     // == d/tau
 
-        const FVector L0 = FVector(P.X, P.Y, P.Z + 5.f);
-        const FVector L1 = L0 + FVector(left.X,  left.Y,  0.f) * L;
-        const FVector R1 = L0 + FVector(right.X, right.Y, 0.f) * L;
+        // Tangent directions from apex to circle (using direction to center: cdir)
+        const FVector2D cdir = (Cc - vB).GetSafeNormal(); // == -normalize(pRel)
+        const FVector2D uL = Rot2D(cdir, +alpha);
+        const FVector2D uR = Rot2D(cdir, -alpha);
 
-        DrawDebugLine(W, L0, L1, Col, true, 10.f, 0, 1.5f);
-        DrawDebugLine(W, L0, R1, Col, true, 10.f, 0, 1.5f);
+        // Tangent points along those directions
+        const float lenTan = FMath::Sqrt(FMath::Max(0.f, dTau*dTau - rTau*rTau));
+        const FVector2D TL = vB + uL * lenTan;
+        const FVector2D TR = vB + uR * lenTan;
 
-        // optional arc between left/right (approx)
-        const int Segs = 8;
-        for (int i=1; i<=Segs; ++i)
+        // Map to world for drawing (anchor at agent position P)
+        const FVector A = P + FVector(vB.X, vB.Y, 0.f) * S;         // apex point
+        const FVector WL = P + FVector(TL.X, TL.Y, 0.f) * S;        // left tangent point
+        const FVector WR = P + FVector(TR.X, TR.Y, 0.f) * S;        // right tangent point
+        const FVector Cw = P + FVector(Cc.X, Cc.Y, 0.f) * S;        // circle center
+
+        // Finite edges (apex -> tangent points)
+        DrawDebugLine(W, A, WL, DebugDrawColor, true, 15.f, 0, 1.5f);
+        DrawDebugLine(W, A, WR, DebugDrawColor, true, 15.f, 0, 1.5f);
+
+        // Draw the VO^tau arc (minor arc between TL and TR)
+        const float a0 = FMath::Atan2((TL - Cc).Y, (TL - Cc).X);
+        const float a1 = FMath::Atan2((TR - Cc).Y, (TR - Cc).X);
+        float dAng = FMath::FindDeltaAngleRadians(a0, a1); // shortest signed delta in [-pi,pi]
+        const float step = dAng / float(ArcSegs);
+        FVector prev = WL;
+        for (int i=1; i<=ArcSegs; ++i)
         {
-            const float t0 = (i-1) / float(Segs);
-            const float t1 = i / float(Segs);
-            const float ang0 = -alpha + (2*alpha)*t0;
-            const float ang1 = -alpha + (2*alpha)*t1;
-            const float c0 = FMath::Cos(ang0), s0 = FMath::Sin(ang0);
-            const float c1 = FMath::Cos(ang1), s1 = FMath::Sin(ang1); 
-            const FVector2D a0(n.X*c0 - n.Y*s0, n.X*s0 + n.Y*c0);
-            const FVector2D a1(n.X*c1 - n.Y*s1, n.X*s1 + n.Y*c1);
-            DrawDebugLine(W,
-                L0 + FVector(a0.X, a0.Y, 0)*L,
-                L0 + FVector(a1.X, a1.Y, 0)*L,
-                Col, true, 10.f, 0, 1.f);
+            const float a = a0 + step * i;
+            const FVector pt = Cw + FVector(FMath::Cos(a), FMath::Sin(a), 0.f) * (rTau * S);
+            DrawDebugLine(W, prev, pt, DebugDrawColor, true, 15.f, 0, 1.2f);
+            prev = pt;
         }
+
+        // Optional markers
+        DrawDebugPoint(W, A, 4.f, FColor::Cyan, false, 0.f, 0);
+        DrawDebugPoint(W, Cw, 4.f, FColor::Green, false, 0.f, 0);
     }
 }
