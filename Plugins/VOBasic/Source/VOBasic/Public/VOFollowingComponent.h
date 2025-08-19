@@ -10,7 +10,7 @@ USTRUCT(BlueprintType)
 struct FVOParams
 {
     GENERATED_BODY()
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float TauHorizon = 1.5f;      // seconds
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float TauHorizon = 0.5f;      // seconds
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float MaxSpeed = 400.f;       // cm/s
     //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float MaxAccel = 1024.f;      // cm/s^2
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float NeighborRange = 600.f;  // cm
@@ -35,6 +35,14 @@ struct FVOCone
 
 	FVector2D TimeHorizonNormal;	// (a, b)
 	float TimeHorizonOffset;		// c
+};
+
+struct FVOOutsideSegment
+{
+	FVector2D	P1;
+	FVector2D	P2;
+	FVector2D	OutsideNormal;
+	float		OutsideOffset;
 };
 
 UCLASS(ClassGroup=AI, meta=(BlueprintSpawnableComponent))
@@ -73,13 +81,19 @@ protected:
     /// @param C Position of obstacle relative to agent
     /// @param Vel Current velocity of obstacle
     FVOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel) const;
+
+	bool TryFindIntersections(
+		const float A1, const float B1, const float C1,
+		const float A2, const float B2, const float C2,
+		FVector2D* OutPoint) const;
 	
     // Collision-time test for candidate velocity v against neighbor (classic discs)
     bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const;
 	
 	
 
-	void DrawVOConesTau(const FVector& P, const TArray<struct FVONeighborView>& Neis) const;
+	void DrawVOCones(TArray<FVOCone>& Cone) const;
+	void DrawCombinedVO(const TArray<TArray<FVOOutsideSegment>>& OutsideSegmentsByRays) const;
 
 	APawn* GetControlledPawn() const;
 
