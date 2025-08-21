@@ -83,6 +83,11 @@ protected:
     FVOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel) const;
 
 	bool TryFindIntersections(
+			const float A1, const float B1, const float C1, FVector2D apex1, bool isLeftRay1,
+			const float A2, const float B2, const float C2, FVector2D apex2, bool isLeftRay2,
+			FVector2D* OutPoint) const;
+	
+	bool TryFindIntersections(
 		const float A1, const float B1, const float C1,
 		const float A2, const float B2, const float C2,
 		FVector2D* OutPoint) const;

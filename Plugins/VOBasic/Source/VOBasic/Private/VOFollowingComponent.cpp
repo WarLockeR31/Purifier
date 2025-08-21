@@ -16,6 +16,11 @@ static TAutoConsoleVariable<int32> CVarVODebugShow(
     TEXT("Show VO cones (0/1). Per-component bDebugDraw also must be true."),
     ECVF_Default);
 
+static TAutoConsoleVariable<int32> CVarCVODebugShow(
+	TEXT("cvo.Show"), 0,
+	TEXT("Show VO cones (0/1). Per-component bDebugDraw also must be true."),
+	ECVF_Default);
+
 UVOFollowingComponent::UVOFollowingComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -173,13 +178,6 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
             const FVector2D pRel(N.Pos.X - actorPos.X, N.Pos.Y - actorPos.Y);
             const FVector2D vRel = vA2D - FVector2D(N.Vel.X, N.Vel.Y);
             const float R = Params.AgentRadius + N.Radius;
-			
-        	if (bDebugDraw && CVarVODebugShow.GetValueOnAnyThread() != 0)
-        	{
-        		//FlushPersistentDebugLines(GetWorld());
-        		//DrawDebugLine(W, actorPos, actorPos + FVector(vA2D.X, vA2D.Y, 0.f), DebugDrawColor, true, 15.f, 0, 1.2f);
-        		//DrawDebugLine(W, N.Pos, N.Pos + N.Vel, DebugDrawColor, true, 15.f, 0, 1.2f);
-        	}
         	
             if (WillCollideWithinTau(pRel, vRel, R, Params.TauHorizon, nullptr))
                 return true;
@@ -236,7 +234,9 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 		FVOCone curVO = VOCones[i];
 
 		// Add apexes???
-		
+		intersectionPointsByRays[CurRayIndex].Add(FVOConeIntersection { curVO.LeftRayApex, true /* doesn"t matter */ });
+		intersectionPointsByRays[CurRayIndex+1].Add(FVOConeIntersection { curVO.RightRayApex, true /* doesn"t matter */ });
+
 		//for (int j = 0; j < i; j++)          // TODO:
 		for (int j = 0; j < VOCones.Num(); j++)
 		{
@@ -249,8 +249,8 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 #pragma region Left ray
 			// Left ray of cur VO
 			if (TryFindIntersections(
-				curVO.LeftRayNormal.X, curVO.LeftRayNormal.Y, curVO.LeftRayOffset,
-				VOCones[j].LeftRayNormal.X, VOCones[j].LeftRayNormal.Y, VOCones[j].LeftRayOffset,
+				curVO.LeftRayNormal.X, curVO.LeftRayNormal.Y, curVO.LeftRayOffset, curVO.LeftRayApex, true,
+				VOCones[j].LeftRayNormal.X, VOCones[j].LeftRayNormal.Y, VOCones[j].LeftRayOffset, VOCones[j].LeftRayApex, true,
 				&IntersectionPoint))
 			{
 				FVector2D curRayDir = FVector2D(-curVO.LeftRayNormal.Y, curVO.LeftRayNormal.X);
@@ -262,8 +262,8 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 			}
 
 			if (TryFindIntersections(
-				curVO.LeftRayNormal.X, curVO.LeftRayNormal.Y, curVO.LeftRayOffset,
-				VOCones[j].RightRayNormal.X, VOCones[j].RightRayNormal.Y, VOCones[j].RightRayOffset,
+				curVO.LeftRayNormal.X, curVO.LeftRayNormal.Y, curVO.LeftRayOffset, curVO.LeftRayApex, true,
+				VOCones[j].RightRayNormal.X, VOCones[j].RightRayNormal.Y, VOCones[j].RightRayOffset,VOCones[j].RightRayApex, false,
 				&IntersectionPoint))
 			{
 				FVector2D curRayDir = FVector2D(-curVO.LeftRayNormal.Y, curVO.LeftRayNormal.X);
@@ -275,8 +275,8 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 #pragma region Right ray
 			// Right ray of cur VO
 			if (TryFindIntersections(
-				curVO.RightRayNormal.X, curVO.RightRayNormal.Y, curVO.RightRayOffset,
-				VOCones[j].LeftRayNormal.X, VOCones[j].LeftRayNormal.Y, VOCones[j].LeftRayOffset,
+				curVO.RightRayNormal.X, curVO.RightRayNormal.Y, curVO.RightRayOffset, curVO.RightRayApex, false,
+				VOCones[j].LeftRayNormal.X, VOCones[j].LeftRayNormal.Y, VOCones[j].LeftRayOffset, VOCones[j].LeftRayApex, true,
 				&IntersectionPoint))
 			{
 				FVector2D curRayDir = FVector2D(curVO.RightRayNormal.Y, -curVO.RightRayNormal.X);
@@ -288,8 +288,8 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 			}
 
 			if (TryFindIntersections(
-				curVO.RightRayNormal.X, curVO.RightRayNormal.Y, curVO.RightRayOffset,
-				VOCones[j].RightRayNormal.X, VOCones[j].RightRayNormal.Y, VOCones[j].RightRayOffset,
+				curVO.RightRayNormal.X, curVO.RightRayNormal.Y, curVO.RightRayOffset, curVO.RightRayApex, false,
+				VOCones[j].RightRayNormal.X, VOCones[j].RightRayNormal.Y, VOCones[j].RightRayOffset, VOCones[j].RightRayApex, false,
 				&IntersectionPoint))
 			{
 				FVector2D curRayDir = FVector2D(curVO.RightRayNormal.Y, -curVO.RightRayNormal.X);
@@ -342,6 +342,8 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 		int Count = 0;
 		for (int i = 0; i < VOCones.Num(); i++)
 		{
+			if (i == I)
+				continue;
 			FVector2D V_B = VOCones[i].Apex;
 			float LeftDot = FVector2D::DotProduct(P  - V_B, VOCones[i].LeftRayNormal);
 			float RightDot = FVector2D::DotProduct(P  - V_B, VOCones[i].RightRayNormal);
@@ -349,6 +351,7 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 			if (LeftDot >= 0.f && RightDot >= 0.f && THDot >= 0.f)
 				Count++;
 		}
+		UE_LOG(LogTemp, Log, TEXT("CNT: %d"), Count);
 		return Count;
 	};
 
@@ -369,7 +372,7 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 		FVector2D	CurNormal = (i % 2 == 0) ? VOCones[i/2].LeftRayNormal : VOCones[i/2].RightRayNormal;
 		float		CurOffset = (i % 2 == 0) ? VOCones[i/2].LeftRayOffset : VOCones[i/2].RightRayOffset;
 
-		int CountOfVOs = CountVOForPoint(i, CurApex);
+		int CountOfVOs = CountVOForPoint(i/2, CurApex);
 
 		for (int j = 1; j < intersectionPointsByRays[i].Num(); j++)
 		{
@@ -383,14 +386,26 @@ FVector UVOFollowingComponent::ComputeVelocity(const FVector& CurVel, const FVec
 				};
 				OutsideSegmentsByRays[i].Add(OutsideSegment);
 			}
+
+			if (intersectionPointsByRays[i][j].bIsFirst)
+				CountOfVOs++;
+			else
+				CountOfVOs = FMath::Max(0, CountOfVOs - 1);
 		}
 	}
 
-	if (bDebugDraw && CVarVODebugShow.GetValueOnAnyThread() != 0)
+	if (bDebugDraw)
 	{
 		FlushPersistentDebugLines(GetWorld());
-		DrawCombinedVO(OutsideSegmentsByRays);
-		DrawVOCones(VOCones);
+		if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
+			DrawCombinedVO(OutsideSegmentsByRays);
+		if (CVarVODebugShow.GetValueOnAnyThread() != 0)
+			DrawVOCones(VOCones);
+
+		for (auto N : Neis)
+		{
+			DrawDebugLine(W, N.Pos, N.Pos + N.Vel, DebugDrawColor, true, 15.f, 0, 0.3f);
+		}
 	}
 
 	return DesiredVel;
@@ -401,6 +416,13 @@ FVOCone UVOFollowingComponent::ComputeVOCone(const float R, const FVector2D& C, 
 	FVOCone Cone;
 
 	Cone.Apex = Vel;
+
+	if (bDebugDraw && CVarVODebugShow.GetValueOnAnyThread() != 0)
+	{
+		FVector P1 = GetControlledPawn()->GetActorLocation();
+		UE_LOG(LogTemp, Log, TEXT("P = %f, %f;"), P1.X, P1.Y);
+		UE_LOG(LogTemp, Log, TEXT("P = %f, %f;"), Vel.X, Vel.Y);
+	}
 	
 	float CSizeSquared = C.X * C.X + C.Y * C.Y;
 	float RR = R * R;
@@ -409,7 +431,7 @@ FVOCone UVOFollowingComponent::ComputeVOCone(const float R, const FVector2D& C, 
 
 	// Rays
 	// Right -> S=-1 ; Left -> S=1
-	float DenominatorInverted = 1.f / CSizeSquared * R;
+	float DenominatorInverted = 1.f / (CSizeSquared * R);
 	Cone.RightRayNormal = (P - Q) * DenominatorInverted;
 	Cone.LeftRayNormal	= (P + Q) * DenominatorInverted;
 	Cone.RightRayOffset = -FVector2D::DotProduct(Cone.RightRayNormal, Vel);
@@ -432,6 +454,32 @@ FVOCone UVOFollowingComponent::ComputeVOCone(const float R, const FVector2D& C, 
 	return Cone;
 }
 
+bool UVOFollowingComponent::TryFindIntersections(const float A1, const float B1, const float C1, FVector2D apex1, bool isLeftRay1,
+												 const float A2, const float B2, const float C2, FVector2D apex2, bool isLeftRay2,
+												 FVector2D* OutPoint) const
+{
+	FVector2D IntersectionPoint;
+
+	if (!TryFindIntersections(A1, B1, C1, A2, B2, C2, &IntersectionPoint))
+		return false;
+
+	FVector2D RayDir1 = isLeftRay1 ? FVector2D(-B1, A1) : FVector2D(B1, -A1);
+	FVector2D RayDir2 = isLeftRay2 ? FVector2D(-B2, A2) : FVector2D(B2, -A2);
+
+	// TODO: Edge case???
+	if (FVector2D::DotProduct(RayDir1, IntersectionPoint - apex1) <= 0.f
+		|| FVector2D::DotProduct(RayDir2, IntersectionPoint - apex2) <= 0.f)
+		return false;
+	
+	if (OutPoint)
+	{
+		*OutPoint = IntersectionPoint;
+	}
+	
+	return true;
+}
+
+
 // TODO: Add ray constraints
 bool UVOFollowingComponent::TryFindIntersections(const float A1, const float B1, const float C1,
 												 const float A2, const float B2, const float C2,
@@ -439,16 +487,16 @@ bool UVOFollowingComponent::TryFindIntersections(const float A1, const float B1,
 {
 	// Solve system of equations with Cramer's rule
 	float D = A1 * B2 - A2 * B1;
-	UE_LOG(LogTemp, Log, TEXT("D = %f"), D);
+	//UE_LOG(LogTemp, Log, TEXT("D = %f"), D);
 	if (FMath::IsNearlyZero(D, KINDA_SMALL_NUMBER))
 		return false;
 
 	float DInv = 1.f / D;
-	UE_LOG(LogTemp, Log, TEXT("Intersection"));
+	//UE_LOG(LogTemp, Log, TEXT("Intersection"));
 	if (OutPoint)
 	{
 		*OutPoint = FVector2D((B1 * C2 - B2 * C1) * DInv, (C1 * A2 - C2 * A1) * DInv);
-		UE_LOG(LogTemp, Log, TEXT("Intersection2"));
+		//UE_LOG(LogTemp, Log, TEXT("Intersection2"));
 	}
 	return true;
 }
@@ -457,12 +505,13 @@ void UVOFollowingComponent::DrawVOCones(TArray<FVOCone>& Cone) const
 {
     UWorld* W = GetWorld(); if (!W) return;
 
-	FVector P = GetOwner()->GetActorLocation();
+	FVector P = GetControlledPawn()->GetActorLocation();
 
     for (int i = 0; i < Cone.Num(); i++)
     {
     	FVOCone curVO = Cone[i];
     	FColor Color = FColor::MakeRandomColor();
+    	
     	
     	FVector2D curRayDir = FVector2D(-curVO.LeftRayNormal.Y, curVO.LeftRayNormal.X);
     	FVector Start = FVector(curVO.LeftRayApex.X, curVO.LeftRayApex.Y, 0.f);
@@ -484,7 +533,7 @@ void UVOFollowingComponent::DrawCombinedVO(const TArray<TArray<FVOOutsideSegment
 {
 	UWorld* W = GetWorld(); if (!W) return;
 
-	FVector P = GetOwner()->GetActorLocation();
+	FVector P = GetControlledPawn()->GetActorLocation();
 
 	//UE_LOG(LogTemp, Log, TEXT("Rays: %d"), OutsideSegmentsByRays.Num());
 
