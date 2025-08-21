@@ -1,6 +1,5 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "VOFollowingComponent.generated.h"
 
@@ -26,23 +25,23 @@ struct FVOCone
 	FVector2D Apex;
 	
 	FVector2D LeftRayApex;
-	FVector2D LeftRayNormal;		// (a, b)
-	float LeftRayOffset;			// c
+	FVector2D LeftRayNormal;       // (a, b)
+	float     LeftRayOffset;       // c
 		
-	FVector2D RightRayApex;	
-	FVector2D RightRayNormal;		// (a, b)
-	float RightRayOffset;			// c
+	FVector2D RightRayApex;
+	FVector2D RightRayNormal;      // (a, b)
+	float     RightRayOffset;      // c
 
-	FVector2D TimeHorizonNormal;	// (a, b)
-	float TimeHorizonOffset;		// c
+	FVector2D TimeHorizonNormal;   // (a, b)
+	float     TimeHorizonOffset;   // c
 };
 
 struct FVOOutsideSegment
 {
-	FVector2D	P1;
-	FVector2D	P2;
-	FVector2D	OutsideNormal;
-	float		OutsideOffset;
+	FVector2D P1;
+	FVector2D P2;
+	FVector2D OutsideNormal;
+	float     OutsideOffset;
 };
 
 UCLASS(ClassGroup=AI, meta=(BlueprintSpawnableComponent))
@@ -95,8 +94,6 @@ protected:
     // Collision-time test for candidate velocity v against neighbor (classic discs)
     bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const;
 	
-	
-
 	void DrawVOCones(TArray<FVOCone>& Cone) const;
 	void DrawCombinedVO(const TArray<TArray<FVOOutsideSegment>>& OutsideSegmentsByRays) const;
 
@@ -105,4 +102,26 @@ protected:
 private:
     bool bHasGoal = false;
     FVector Goal = FVector::ZeroVector;
+
+	// ========================= Helper types & methods for refactored ComputeVelocity =========================
+	struct FVOConeIntersection { FVector2D P; bool bIsFirst; };
+
+	// Candidate check
+	bool IsVelocityForbidden(const FVector2D& CandidateVA, const TArray<struct FVONeighborView>& Neis, const FVector& ActorPos) const;
+
+	// VO construction
+	void BuildVOCones(const TArray<struct FVONeighborView>& Neis, const FVector& ActorPos, TArray<FVOCone>& OutVOCones) const;
+
+	// Intersections along cone rays
+	void CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& OutIntersectionsByRays) const;
+	void SortIntersectionsByRays(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& IntersectionsByRays) const;
+
+	// Classification helpers
+	int32 CountVOsForPoint(const TArray<FVOCone>& VOCones, int32 ConeIndexToSkip, const FVector2D& P) const;
+	void ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<TArray<FVOConeIntersection>>& IntersectionsByRays, TArray<TArray<FVOOutsideSegment>>& OutOutsideSegmentsByRays) const;
+
+	// Utility: fetch apex/normal/offset for a global ray index (0..2*N-1)
+	static void GetRayApexNormalOffset(const TArray<FVOCone>& VOCones, int32 RayIndex, FVector2D& OutApex, FVector2D& OutNormal, float& OutOffset);
+	static FVector2D LeftDirFromNormal(const FVector2D& N) { return FVector2D(-N.Y, N.X); }
+	static FVector2D RightDirFromNormal(const FVector2D& N) { return FVector2D(N.Y, -N.X); }
 };

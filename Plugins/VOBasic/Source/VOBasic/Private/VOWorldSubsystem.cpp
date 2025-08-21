@@ -14,6 +14,7 @@ void UVOWorldSubsystem::Unregister(UVOFollowingComponent* Comp)
 void UVOWorldSubsystem::QueryNeighbors(const UVOFollowingComponent* Querier, const FVector& P, float Range, TArray<FVONeighborView>& Out) const
 {
 	const float R2 = Range * Range;
+	
 	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
 	{
 		UVOFollowingComponent* Other = It.Get();
