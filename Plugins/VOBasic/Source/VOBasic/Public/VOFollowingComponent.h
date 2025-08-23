@@ -3,37 +3,32 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "VOFollowingComponent.generated.h"
 
-class UVOWorldSubsystem;
+class UVOManager;
 
 USTRUCT(BlueprintType)
 struct FVOParams
 {
-    GENERATED_BODY()
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float TauHorizon = 0.5f;      // seconds
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float MaxSpeed = 400.f;       // cm/s
-    //UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float MaxAccel = 1024.f;      // cm/s^2
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float NeighborRange = 600.f;  // cm
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float AgentRadius = 34.f;     // cm
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") int32 AngleSamples = 12;      // around desired dir
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float TauHorizon		= 0.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float MaxSpeed		= 400.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float NeighborRange	= 600.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") float AgentRadius	= 34.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") int32 AngleSamples	= 12;
 };
 
-/// Velocity obstacle truncated cone (3 constraints)
 USTRUCT(BlueprintType)
 struct FVOCone
 {
 	GENERATED_BODY()
 	FVector2D Apex;
-	
 	FVector2D LeftRayApex;
-	FVector2D LeftRayNormal;       // (a, b)
-	float     LeftRayOffset;       // c
-		
+	FVector2D LeftRayNormal;
+	float     LeftRayOffset;
 	FVector2D RightRayApex;
-	FVector2D RightRayNormal;      // (a, b)
-	float     RightRayOffset;      // c
-
-	FVector2D TimeHorizonNormal;   // (a, b)
-	float     TimeHorizonOffset;   // c
+	FVector2D RightRayNormal;
+	float     RightRayOffset;
+	FVector2D TimeHorizonNormal;
+	float     TimeHorizonOffset;
 };
 
 struct FVOOutsideSegment
@@ -47,81 +42,30 @@ struct FVOOutsideSegment
 UCLASS(ClassGroup=AI, meta=(BlueprintSpawnableComponent))
 class VOBASIC_API UVOFollowingComponent : public UPathFollowingComponent
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
+// Fields & Properties
 public:
-    UVOFollowingComponent();
-
-    // UActorComponent
-    virtual void OnRegister() override;
-    virtual void OnUnregister() override;
-    virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-    // Desired target
-    UFUNCTION(BlueprintCallable, Category="VO") void SetMoveGoal(const FVector& InGoal) { bHasGoal = true; Goal = InGoal; }
-    UFUNCTION(BlueprintCallable, Category="VO") void ClearMoveGoal() { bHasGoal = false; }
-
-    // Debug toggle (per component)
-    UPROPERTY(EditAnywhere, Category="VO|Debug") bool bDebugDraw = false;
-	UPROPERTY(EditAnywhere, Category="VO|Debug") FColor DebugDrawColor = FColor::Red;
-
-	// Parameters
-    UPROPERTY(EditAnywhere, Category="VO") FVOParams Params;
-
-    // Accessors for subsystem
-    FVector GetOwnerLocation() const;
-    FVector GetOwnerVelocity() const;
-    float   GetAgentRadius() const { return Params.AgentRadius; }
-
-protected:
-    // Compute next velocity
-    FVector ComputeVelocity(const FVector& CurVel, const FVector& DesiredVel, const TArray<struct FVONeighborView>& Neis) const;
+	UPROPERTY(EditAnywhere, Category="VO|Debug")	bool		bDebugDraw = false;
+	UPROPERTY(EditAnywhere, Category="VO|Debug")	FColor		DebugDrawColor = FColor::Red;
+	UPROPERTY(EditAnywhere, Category="VO")			FVOParams	Params;
 	
-    /// @param R Minkowski sum radius
-    /// @param C Position of obstacle relative to agent
-    /// @param Vel Current velocity of obstacle
-    FVOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel) const;
+public:
+	UVOFollowingComponent();
+	virtual void OnRegister() override;
+	virtual void OnUnregister() override;
+	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	bool TryFindIntersections(
-			const float A1, const float B1, const float C1, FVector2D apex1, bool isLeftRay1,
-			const float A2, const float B2, const float C2, FVector2D apex2, bool isLeftRay2,
-			FVector2D* OutPoint) const;
+	UFUNCTION(BlueprintCallable, Category="VO") void SetMoveGoal(const FVector& InGoal) { bHasGoal = true; Goal = InGoal; }
+	UFUNCTION(BlueprintCallable, Category="VO") void ClearMoveGoal()					{ bHasGoal = false; }
 	
-	bool TryFindIntersections(
-		const float A1, const float B1, const float C1,
-		const float A2, const float B2, const float C2,
-		FVector2D* OutPoint) const;
-	
-    // Collision-time test for candidate velocity v against neighbor (classic discs)
-    bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const;
-	
-	void DrawVOCones(TArray<FVOCone>& Cone) const;
-	void DrawCombinedVO(const TArray<TArray<FVOOutsideSegment>>& OutsideSegmentsByRays) const;
 
-	APawn* GetControlledPawn() const;
-
+	FVector GetOwnerLocation()	const;
+	FVector GetOwnerVelocity()	const;
+	float   GetAgentRadius()	const	{ return Params.AgentRadius; }
+	bool	HasVOGoal()			const	{ return bHasGoal; }
+	FVector GetMoveGoal()		const	{ return Goal; }
+	
 private:
-    bool bHasGoal = false;
-    FVector Goal = FVector::ZeroVector;
-
-	// ========================= Helper types & methods for refactored ComputeVelocity =========================
-	struct FVOConeIntersection { FVector2D P; bool bIsFirst; };
-
-	// Candidate check
-	bool IsVelocityForbidden(const FVector2D& CandidateVA, const TArray<struct FVONeighborView>& Neis, const FVector& ActorPos) const;
-
-	// VO construction
-	void BuildVOCones(const TArray<struct FVONeighborView>& Neis, const FVector& ActorPos, TArray<FVOCone>& OutVOCones) const;
-
-	// Intersections along cone rays
-	void CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& OutIntersectionsByRays) const;
-	void SortIntersectionsByRays(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& IntersectionsByRays) const;
-
-	// Classification helpers
-	int32 CountVOsForPoint(const TArray<FVOCone>& VOCones, int32 ConeIndexToSkip, const FVector2D& P) const;
-	void ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<TArray<FVOConeIntersection>>& IntersectionsByRays, TArray<TArray<FVOOutsideSegment>>& OutOutsideSegmentsByRays) const;
-
-	// Utility: fetch apex/normal/offset for a global ray index (0..2*N-1)
-	static void GetRayApexNormalOffset(const TArray<FVOCone>& VOCones, int32 RayIndex, FVector2D& OutApex, FVector2D& OutNormal, float& OutOffset);
-	static FVector2D LeftDirFromNormal(const FVector2D& N) { return FVector2D(-N.Y, N.X); }
-	static FVector2D RightDirFromNormal(const FVector2D& N) { return FVector2D(N.Y, -N.X); }
+	bool	bHasGoal	= false;
+	FVector Goal		= FVector::ZeroVector;
 };
