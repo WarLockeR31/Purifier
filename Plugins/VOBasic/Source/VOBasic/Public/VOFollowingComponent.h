@@ -16,29 +16,6 @@ struct FVOParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") int32 AngleSamples	= 12;
 };
 
-USTRUCT(BlueprintType)
-struct FVOCone
-{
-	GENERATED_BODY()
-	FVector2D Apex;
-	FVector2D LeftRayApex;
-	FVector2D LeftRayNormal;
-	float     LeftRayOffset;
-	FVector2D RightRayApex;
-	FVector2D RightRayNormal;
-	float     RightRayOffset;
-	FVector2D TimeHorizonNormal;
-	float     TimeHorizonOffset;
-};
-
-struct FVOOutsideSegment
-{
-	FVector2D P1;
-	FVector2D P2;
-	FVector2D OutsideNormal;
-	float     OutsideOffset;
-};
-
 UCLASS(ClassGroup=AI, meta=(BlueprintSpawnableComponent))
 class VOBASIC_API UVOFollowingComponent : public UPathFollowingComponent
 {

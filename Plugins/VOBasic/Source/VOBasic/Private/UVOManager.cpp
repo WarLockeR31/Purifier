@@ -122,46 +122,57 @@ void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TAr
 	OutIntersectionsByRays.SetNum(NumRays);
 	for (int32 i = 0; i < OutIntersectionsByRays.Num(); ++i)
 	{
-		OutIntersectionsByRays[i].Reserve(2 * VOCones.Num() - 1);
+		OutIntersectionsByRays[i].Reserve(2 * VOCones.Num()); // TODO: Think about it
 	}
 
-	int32 CurRayIndex = 0;
-	for (int32 i = 0; i < VOCones.Num(); ++i)
+	for (int32 i = 0; i < 2 * VOCones.Num(); ++i)
 	{
-		const FVOCone& CurVO = VOCones[i];
-		OutIntersectionsByRays[CurRayIndex    ].Add({ CurVO.LeftRayApex,  true });
-		OutIntersectionsByRays[CurRayIndex + 1].Add({ CurVO.RightRayApex, true });
+		bool bIsSegmentIValid = (i % 2 == 0)
+							   ? VOCones[i / 2].bIsLeftRaySegmentValid
+							   : VOCones[i / 2].bIsRightRaySegmentValid;
 
-		for (int32 j = 0; j < VOCones.Num(); ++j)
+		if (!bIsSegmentIValid)
+			continue;
+
+		FVOSegment SegmentI	= (i % 2 == 0)
+							  ? VOCones[i / 2].LeftRaySegment
+							  : VOCones[i / 2].RightRaySegment;
+
+		FVector2D CurRayDir = (i % 2 == 0) ? VOCones[i / 2].LeftRayDir : VOCones[i / 2].RightRayDir;
+		
+		// Add start and end points
+		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P1, true /* doesn't matter */, 0.f });
+		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P2, true /* doesn't matter */, 1.f });
+
+		for (int32 j = 0; j < 2 * VOCones.Num(); ++j)
 		{
-			if (i == j) continue;
-			for (int sideI = 0; sideI < 2; ++sideI)
+			if (i / 2 == j / 2)
+				continue;
+
+			bool bIsSegmentJValid = (j % 2 == 0)
+							   ? VOCones[j / 2].bIsLeftRaySegmentValid
+							   : VOCones[j / 2].bIsRightRaySegmentValid;
+
+			if (!bIsSegmentJValid)
+				continue;
+
+			FVOSegment SegmentJ = (j % 2 == 0)
+			                      ? VOCones[j / 2].LeftRaySegment
+								  : VOCones[j / 2].RightRaySegment;
+
+			FVector2D NormalJ = (j % 2 == 0)
+								? VOCones[j / 2].LeftRayNormal
+								: VOCones[j / 2].RightRayNormal; 
+			
+			FVector2D	OutPoint;
+			float		OutT;
+			// Find intersections
+			if (TryFindIntersections(SegmentI, SegmentJ, &OutPoint, &OutT))
 			{
-				const int32 rayIndexI = CurRayIndex + sideI;
-				FVector2D apex1, n1; float c1;
-				GetRayApexNormalOffset(VOCones, rayIndexI, apex1, n1, c1);
-				const bool isLeft1 = (sideI == 0);
-				const FVector2D curRayDir = isLeft1 ? LeftDirFromNormal(n1) : RightDirFromNormal(n1);
-				for (int sideJ = 0; sideJ < 2; ++sideJ)
-				{
-					const int32 rayIndexJ = j * 2 + sideJ;
-					FVector2D apex2, n2; float c2;
-					GetRayApexNormalOffset(VOCones, rayIndexJ, apex2, n2, c2);
-					const bool isLeft2 = (sideJ == 0);
-					FVector2D P;
-					if (TryFindIntersections(
-						n1.X, n1.Y, c1, apex1, isLeft1,
-						n2.X, n2.Y, c2, apex2, isLeft2,
-						&P))
-					{
-						const bool bIsFirst = FVector2D::DotProduct(curRayDir, n2) > 0.f;
-						OutIntersectionsByRays[rayIndexI].Add({ P, bIsFirst });
-					}
-				}
+				const bool bIsFirst = FVector2D::DotProduct(CurRayDir, NormalJ) > 0.f;
+				OutIntersectionsByRays[i].Add(FVOConeIntersection{ OutPoint, bIsFirst, OutT });
 			}
 		}
-
-		CurRayIndex += 2;
 	}
 }
 
@@ -169,15 +180,9 @@ void UVOManager::SortIntersectionsByRays(const TArray<FVOCone>& VOCones, TArray<
 {
 	for (int32 RayIdx = 0; RayIdx < IntersectionsByRays.Num(); ++RayIdx)
 	{
-		FVector2D CurApex, CurNormal; float CurOffset;
-		GetRayApexNormalOffset(VOCones, RayIdx, CurApex, CurNormal, CurOffset);
-		const FVector2D CurRayDir = (RayIdx % 2 == 0) ? LeftDirFromNormal(CurNormal) : RightDirFromNormal(CurNormal);
-
 		IntersectionsByRays[RayIdx].Sort([&](const FVOConeIntersection& A, const FVOConeIntersection& B)
 		{
-			const float tA = FVector2D::DotProduct(A.P - CurApex, CurRayDir);
-			const float tB = FVector2D::DotProduct(B.P - CurApex, CurRayDir);
-			return tA < tB;
+			return A.t < B.t;
 		});
 	}
 }
@@ -208,11 +213,21 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 
 	for (int32 RayIdx = 0; RayIdx < IntersectionsByRays.Num(); ++RayIdx)
 	{
-		FVector2D CurApex, CurNormal; float CurOffset;
-		GetRayApexNormalOffset(VOCones, RayIdx, CurApex, CurNormal, CurOffset);
+		bool bIsSegmentValid = (RayIdx % 2 == 0)
+							   ? VOCones[RayIdx / 2].bIsLeftRaySegmentValid
+							   : VOCones[RayIdx / 2].bIsRightRaySegmentValid;
 
-		int32 CountOfVOs = CountVOsForPoint(VOCones, RayIdx / 2, CurApex);
+		if (!bIsSegmentValid)
+			continue;
+		
+		FVector2D FirstPoint = IntersectionsByRays[RayIdx][0].P;
 
+		FVector2D Normal = (RayIdx % 2 == 0)
+						   ? VOCones[RayIdx / 2].LeftRayNormal
+						   : VOCones[RayIdx / 2].RightRayNormal;
+
+		int32 CountOfVOs = CountVOsForPoint(VOCones, RayIdx / 2, FirstPoint);
+		
 		for (int32 j = 1; j < IntersectionsByRays[RayIdx].Num(); ++j)
 		{
 			if (CountOfVOs == 0)
@@ -220,8 +235,7 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 				const FVOOutsideSegment OutsideSegment = {
 					IntersectionsByRays[RayIdx][j - 1].P,
 					IntersectionsByRays[RayIdx][j].P,
-					CurNormal,
-					CurOffset,
+					Normal,
 				};
 				OutOutsideSegmentsByRays[RayIdx].Add(OutsideSegment);
 			}
@@ -230,41 +244,6 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 				++CountOfVOs;
 			else
 				CountOfVOs = FMath::Max(0, CountOfVOs - 1);
-		}
-
-		if (CountOfVOs == 0)
-		{
-			const float S       = CurNormal.X * CurNormal.X + CurNormal.Y * CurNormal.Y;
-			const float InvSqrt = FMath::InvSqrt(S);
-			const float RR      = Params.MaxSpeed * Params.MaxSpeed;
-			const float D       = FMath::Abs(CurOffset) * InvSqrt;
-
-			const FVector2D CurRayDir = (RayIdx % 2 == 0) ? LeftDirFromNormal(CurNormal) : RightDirFromNormal(CurNormal);
-			const FVector2D FromPoint = IntersectionsByRays[RayIdx].Num() > 0 ? IntersectionsByRays[RayIdx].Last().P : CurApex;
-
-			if (FMath::IsNearlyEqual(D, Params.MaxSpeed, KINDA_SMALL_NUMBER))
-			{
-				const FVector2D LastPoint = -CurNormal * CurOffset / S;
-				if (FVector2D::DotProduct(LastPoint - CurApex, CurRayDir) > 0)
-				{
-					OutOutsideSegmentsByRays[RayIdx].Add({ FromPoint, LastPoint, CurNormal, CurOffset });
-				}
-			}
-			else if (D < Params.MaxSpeed)
-			{
-				const FVector2D Q = FVector2D(CurNormal.Y, -CurNormal.X) * FMath::Sqrt(RR * S - CurOffset * CurOffset);
-				const FVector2D LastPoint1 = (-CurNormal * CurOffset + Q) / S;
-				const FVector2D LastPoint2 = (-CurNormal * CurOffset - Q) / S;
-
-				const float t1 = FVector2D::DotProduct(LastPoint1 - IntersectionsByRays[RayIdx].Last().P, CurRayDir);
-				const float t2 = FVector2D::DotProduct(LastPoint2 - IntersectionsByRays[RayIdx].Last().P, CurRayDir);
-
-				if (t1 > 0 || t2 > 0)
-				{
-					const FVector2D Chosen = (t1 > t2) ? LastPoint1 : LastPoint2;
-					OutOutsideSegmentsByRays[RayIdx].Add({ FromPoint, Chosen, CurNormal, CurOffset });
-				}
-			}
 		}
 	}
 }
@@ -297,23 +276,55 @@ FVOCone UVOManager::ComputeVOCone(const float R, const FVector2D& C, const FVect
 	FVector2D P = RR * FVector2D(C.X, C.Y);
 	FVector2D Q = R * FMath::Sqrt(CSizeSquared - RR) * FVector2D(C.Y, -C.X);
 
+	// Line equation
 	float DenominatorInverted = 1.f / (CSizeSquared * R);
 	Cone.RightRayNormal = (P - Q) * DenominatorInverted;
 	Cone.LeftRayNormal	= (P + Q) * DenominatorInverted;
 	Cone.RightRayOffset = -FVector2D::DotProduct(Cone.RightRayNormal, Vel);
 	Cone.LeftRayOffset	= -FVector2D::DotProduct(Cone.LeftRayNormal, Vel);
 
+	// Time Horizon
 	float CSize = FMath::Sqrt(CSizeSquared);
 	FVector2D PTimeHorizon = ((CSize - R) / (CSize * Params.TauHorizon)) * C + Vel;
 	Cone.TimeHorizonNormal = C / CSize;
 	Cone.TimeHorizonOffset = -FVector2D::DotProduct(Cone.TimeHorizonNormal, PTimeHorizon);
 
+	// Apexes
 	float LDeterminantInverted = 1.f / (Cone.TimeHorizonNormal.X * Cone.LeftRayNormal.Y  - Cone.TimeHorizonNormal.Y * Cone.LeftRayNormal.X);
 	Cone.LeftRayApex = FVector2D(
 		(Cone.TimeHorizonNormal.Y * Cone.LeftRayOffset - Cone.LeftRayNormal.Y * Cone.TimeHorizonOffset) * LDeterminantInverted,
 		(Cone.LeftRayNormal.X * Cone.TimeHorizonOffset - Cone.TimeHorizonNormal.X * Cone.LeftRayOffset) * LDeterminantInverted	
 	);
 	Cone.RightRayApex = PTimeHorizon + (PTimeHorizon - Cone.LeftRayApex);
+
+	// Ray Directions
+	Cone.LeftRayDir		= FVector2D(-Cone.LeftRayNormal.Y, Cone.LeftRayNormal.X);
+	Cone.RightRayDir	= FVector2D(Cone.RightRayNormal.Y, -Cone.RightRayNormal.X);
+
+	// Segments
+	FVOSegment OutSegment;
+	if (TryFindSegmentOfRayInCircle(Cone.LeftRayApex, Cone.LeftRayNormal, Cone.LeftRayOffset, Cone.LeftRayDir,
+									Params.MaxSpeed,
+									&OutSegment))
+	{
+		Cone.bIsLeftRaySegmentValid = true;
+		Cone.LeftRaySegment = OutSegment;
+	}
+
+	if (TryFindSegmentOfRayInCircle(Cone.RightRayApex, Cone.RightRayNormal, Cone.RightRayOffset, Cone.RightRayDir,
+									Params.MaxSpeed,
+									&OutSegment))
+	{
+		Cone.bIsRightRaySegmentValid = true;
+		Cone.RightRaySegment = OutSegment;
+	}
+
+	if (TryFindSubSegmentInCircle(Cone.LeftRayApex, Cone.RightRayApex, Params.MaxSpeed, &OutSegment))
+	{
+		Cone.bIsTHSegmentValid = true;
+		Cone.TimeHorizonSegment = OutSegment;
+	}
+	
 	return Cone;
 }
 
@@ -347,6 +358,150 @@ bool UVOManager::TryFindIntersections(const float A1, const float B1, const floa
 	if (OutPoint)
 	{
 		*OutPoint = IntersectionPoint;
+	}
+	return true;
+}
+
+bool UVOManager::TryFindIntersections(FVOSegment S1, FVOSegment S2, FVector2D* OutPoint, float* OutT)
+{
+	FVector2D Delta1 = S1.P2 - S1.P1;
+	FVector2D Delta2 = S2.P2 - S2.P1;
+
+	float Denominator = Delta1.X * Delta2.Y - Delta1.Y * Delta2.X;
+
+	// Ignore grazing cases
+	if (FMath::IsNearlyZero(Denominator, KINDA_SMALL_NUMBER))
+	{
+		return false;
+	}
+
+	float InvDenominator = 1.f / Denominator;
+	FVector2D S1ToS2 = S2.P1 - S1.P1;
+	float t = (S1ToS2.X * Delta2.Y - S1ToS2.Y * Delta2.X) * InvDenominator;
+	float u = (S1ToS2.X * Delta1.Y - S1ToS2.Y * Delta1.X) * InvDenominator;
+
+	// TODO: Think about edge case:
+	// If S1 (or S2) is degenerate (A == B) and the point lies on the other segment,
+	//    the function returns true and sets OutT = 0 (i.e., at S1.A).
+	
+	// Intersection outside segments
+	if (t < 0.f || t > 1.f || u < 0.f || u > 1.f)
+		return false;
+
+	// Find OutPoint and OutT
+	if (OutPoint)
+	{
+		*OutPoint = S1.P1 + t * Delta1;
+	}
+
+	if (OutT)
+	{
+		*OutT = t;
+	}
+
+	return true;
+}
+
+bool UVOManager::TryFindSegmentOfRayInCircle(const FVector2D& Apex, const FVector2D& Normal, const float Offset,
+                                             const FVector2D& Dir, const float Radius, FVOSegment* OutSegment) const
+{
+	const float S       = Normal.X * Normal.X + Normal.Y * Normal.Y;
+	const float SInv	= 1.f / S;
+	const float SInvSqrt = FMath::InvSqrt(S);
+	const float RR      = Radius * Radius;
+	const float D       = FMath::Abs(Offset) * SInvSqrt;    // Distance from center of circle to line
+
+	// Edge case?
+	if (FMath::IsNearlyEqual(D, Radius, KINDA_SMALL_NUMBER) || D > Radius)
+	{
+		return false;
+	}
+
+	const FVector2D Q = FVector2D(Normal.Y, -Normal.X) * FMath::Sqrt(RR * S - Offset * Offset);
+	const FVector2D P1 = (-Normal * Offset + Q) * SInv;
+	const FVector2D P2 = (-Normal * Offset - Q) * SInv;
+
+	const float t1 = FVector2D::DotProduct(P1 - Apex, Dir);
+	const float t2 = FVector2D::DotProduct(P2 - Apex, Dir);
+
+	// No intersections with ray
+	if (t1 < 0.f && t2 < 0.f)
+		return false;
+
+	if (!OutSegment)
+		return true;
+	
+	// 2 Intersections
+	if (t1 > 0.f && t2 > 0.f)
+	{
+		if (t2 > t1)
+		{
+			OutSegment->P1 = P1;
+			OutSegment->P2 = P2;
+		}
+		else
+		{
+			OutSegment->P1 = P2;
+			OutSegment->P2 = P1;
+		}
+
+		return true;
+	}
+
+	// 1 Intersection
+	{
+		OutSegment->P1 = Apex;
+		OutSegment->P2 = t1 > 0.f ? P1 : P2;
+		return true;
+	}
+}
+
+bool UVOManager::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius,
+	FVOSegment* OutSegment) const
+{
+	// Early return when both points inside circle 
+	float P1Squared = P1.SizeSquared();
+	float P2Squared = P2.SizeSquared();
+	float RR		= Radius * Radius;
+
+	if (P1Squared <= RR && P2Squared <= RR)
+	{
+		if (OutSegment)
+		{
+			OutSegment->P1 = P1;
+			OutSegment->P2 = P2;
+		}
+		return true;
+	}
+	
+	// Find t values for intersection points
+	FVector2D Delta = P2 - P1;
+	float a = Delta.SizeSquared();
+	float b = 2.f * FVector2D::DotProduct(P1, Delta);
+	float c = P1Squared - RR;
+
+	float Discriminant = b * b - 4.f * a * c;
+
+	if (FMath::IsNearlyZero(Discriminant, KINDA_SMALL_NUMBER) || Discriminant < 0.f)
+	{
+		return false;
+	}
+
+	float DiscSqrt = FMath::Sqrt(Discriminant);
+	float InvDenominator = 1.f / (2.f * a);
+	float t1 = (-b - DiscSqrt) * InvDenominator;
+	float t2 = (-b + DiscSqrt) * InvDenominator;
+
+	if (t1 > 1.f || t2 < 0.f)
+		return false;
+	
+	// Find intersection points
+	FVector2D OutPoint1 = (t1 < 0) ? P1 : P1 + Delta * t1;
+	FVector2D OutPoint2 = (t2 > 1) ? P2 : P1 + Delta * t2;
+	if (OutSegment)
+	{
+		OutSegment->P1 = OutPoint1;
+		OutSegment->P2 = OutPoint2;
 	}
 	return true;
 }
