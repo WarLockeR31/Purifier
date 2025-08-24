@@ -110,59 +110,84 @@ void UVOManager::BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector
 	}
 }
 
-static inline FVector2D RayDirFromNormal_Local(const FVector2D& N, bool bIsLeft)
-{
-	return bIsLeft ? FVector2D(-N.Y, N.X) : FVector2D(N.Y, -N.X);
-}
-
 void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& OutIntersectionsByRays) const
 {
-	const int32 NumRays = VOCones.Num() * 2;
+	const int32 NumRays = VOCones.Num() * 3;
 	OutIntersectionsByRays.Reset();
 	OutIntersectionsByRays.SetNum(NumRays);
 	for (int32 i = 0; i < OutIntersectionsByRays.Num(); ++i)
 	{
-		OutIntersectionsByRays[i].Reserve(2 * VOCones.Num()); // TODO: Think about it
+		OutIntersectionsByRays[i].Reserve(3 * VOCones.Num() - 1); // 3 * (N - 1) + 2
 	}
 
-	for (int32 i = 0; i < 2 * VOCones.Num(); ++i)
+	for (int32 i = 0; i < NumRays; ++i)
 	{
-		bool bIsSegmentIValid = (i % 2 == 0)
-							   ? VOCones[i / 2].bIsLeftRaySegmentValid
-							   : VOCones[i / 2].bIsRightRaySegmentValid;
+		FVOCone ConeI = VOCones[i / 3];
+
+		bool bIsSegmentIValid;
+		switch (i % 3)
+		{
+			case 0:	 bIsSegmentIValid = ConeI.bIsLeftRaySegmentValid;	break;
+			case 1:	 bIsSegmentIValid = ConeI.bIsRightRaySegmentValid;	break;
+			default: bIsSegmentIValid = ConeI.bIsTHSegmentValid;		break;
+		}
 
 		if (!bIsSegmentIValid)
 			continue;
 
-		FVOSegment SegmentI	= (i % 2 == 0)
-							  ? VOCones[i / 2].LeftRaySegment
-							  : VOCones[i / 2].RightRaySegment;
+		FVOSegment SegmentI;
+		switch (i % 3)
+		{
+			case 0:  SegmentI = ConeI.LeftRaySegment;		break;
+			case 1:  SegmentI = ConeI.RightRaySegment;		break;
+			default: SegmentI = ConeI.TimeHorizonSegment;	break;
+		}
 
-		FVector2D CurRayDir = (i % 2 == 0) ? VOCones[i / 2].LeftRayDir : VOCones[i / 2].RightRayDir;
+		FVector2D CurRayDir;
+		switch (i % 3)
+		{
+			case 0:  CurRayDir = ConeI.LeftRayDir;			break;
+			case 1:  CurRayDir = ConeI.RightRayDir;			break;
+			default: CurRayDir = FVector2D(ConeI.TimeHorizonNormal.Y, -ConeI.TimeHorizonNormal.X);	break;
+		}
 		
 		// Add start and end points
 		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P1, true /* doesn't matter */, 0.f });
 		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P2, true /* doesn't matter */, 1.f });
 
-		for (int32 j = 0; j < 2 * VOCones.Num(); ++j)
+		for (int32 j = 0; j < NumRays; ++j)
 		{
-			if (i / 2 == j / 2)
+			if (i / 3 == j / 3)
 				continue;
 
-			bool bIsSegmentJValid = (j % 2 == 0)
-							   ? VOCones[j / 2].bIsLeftRaySegmentValid
-							   : VOCones[j / 2].bIsRightRaySegmentValid;
+			FVOCone ConeJ = VOCones[j / 3];
+			
+			bool bIsSegmentJValid;
+			switch (j % 3)
+			{
+				case 0:	 bIsSegmentJValid = ConeJ.bIsLeftRaySegmentValid;	break;
+				case 1:	 bIsSegmentJValid = ConeJ.bIsRightRaySegmentValid;	break;
+				default: bIsSegmentJValid = ConeJ.bIsTHSegmentValid;		break;
+			}
 
 			if (!bIsSegmentJValid)
 				continue;
 
-			FVOSegment SegmentJ = (j % 2 == 0)
-			                      ? VOCones[j / 2].LeftRaySegment
-								  : VOCones[j / 2].RightRaySegment;
+			FVOSegment SegmentJ;
+			switch (j % 3)
+			{
+				case 0:  SegmentJ = ConeJ.LeftRaySegment;		break;
+				case 1:  SegmentJ = ConeJ.RightRaySegment;		break;
+				default: SegmentJ = ConeJ.TimeHorizonSegment;	break;
+			}
 
-			FVector2D NormalJ = (j % 2 == 0)
-								? VOCones[j / 2].LeftRayNormal
-								: VOCones[j / 2].RightRayNormal; 
+			FVector2D NormalJ;
+			switch (j % 3)
+			{
+				case 0:  NormalJ = ConeJ.LeftRayNormal;		break;
+				case 1:  NormalJ = ConeJ.RightRayNormal;	break;
+				default: NormalJ = ConeJ.TimeHorizonNormal;	break;
+			}
 			
 			FVector2D	OutPoint;
 			float		OutT;
@@ -213,21 +238,28 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 
 	for (int32 RayIdx = 0; RayIdx < IntersectionsByRays.Num(); ++RayIdx)
 	{
-		bool bIsSegmentValid = (RayIdx % 2 == 0)
-							   ? VOCones[RayIdx / 2].bIsLeftRaySegmentValid
-							   : VOCones[RayIdx / 2].bIsRightRaySegmentValid;
+		bool bIsSegmentValid;
+		switch (RayIdx % 3)
+		{
+			case 0:	 bIsSegmentValid = VOCones[RayIdx / 3].bIsLeftRaySegmentValid;	break;
+			case 1:	 bIsSegmentValid = VOCones[RayIdx / 3].bIsRightRaySegmentValid;	break;
+			default: bIsSegmentValid = VOCones[RayIdx / 3].bIsTHSegmentValid;		break;
+		}
 
 		if (!bIsSegmentValid)
 			continue;
 		
 		FVector2D FirstPoint = IntersectionsByRays[RayIdx][0].P;
 
-		FVector2D Normal = (RayIdx % 2 == 0)
-						   ? VOCones[RayIdx / 2].LeftRayNormal
-						   : VOCones[RayIdx / 2].RightRayNormal;
+		FVector2D Normal;
+		switch (RayIdx % 3)
+		{
+			case 0:  Normal = VOCones[RayIdx / 3].LeftRayNormal;		break;
+			case 1:  Normal = VOCones[RayIdx / 3].RightRayNormal;		break;
+			default: Normal = VOCones[RayIdx / 3].TimeHorizonNormal;	break;
+		}
 
-		int32 CountOfVOs = CountVOsForPoint(VOCones, RayIdx / 2, FirstPoint);
-		
+		int32 CountOfVOs = CountVOsForPoint(VOCones, RayIdx / 3, FirstPoint);
 		for (int32 j = 1; j < IntersectionsByRays[RayIdx].Num(); ++j)
 		{
 			if (CountOfVOs == 0)
@@ -568,7 +600,7 @@ void UVOManager::DrawCombinedVO(const UVOFollowingComponent* Comp, const TArray<
 	FColor Color;
 	for (int i = 0; i < OutsideSegmentsByRays.Num(); i++)
 	{
-		if (i % 2 == 0)
+		if (i % 3 == 0)
 			Color = FColor::MakeRandomColor();
 		for (int j = 0; j < OutsideSegmentsByRays[i].Num(); j++)
 		{
