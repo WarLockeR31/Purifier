@@ -70,6 +70,8 @@ void UVOManager::Tick(float DeltaTime)
 			Neis.Add(V);
 		}
 
+		PrepareArrays(Neis.Num());;
+
 		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Comp->Params);
 
 		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
@@ -94,9 +96,6 @@ bool UVOManager::IsVelocityForbidden(const FVector2D& CandidateVA, const TArray<
 
 void UVOManager::BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVOParams& Params, TArray<FVOCone>& OutVOCones) const
 {
-	OutVOCones.Reset();
-	OutVOCones.Reserve(Neis.Num());
-
 	for (int32 i = 0; i < Neis.Num(); ++i)
 	{
 		const FVONeighborView& N = Neis[i];
@@ -110,16 +109,10 @@ void UVOManager::BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector
 	}
 }
 
-void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& OutIntersectionsByRays) const
+void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones)
 {
-	const int32 NumRays = VOCones.Num() * 3;
-	OutIntersectionsByRays.Reset();
-	OutIntersectionsByRays.SetNum(NumRays);
-	for (int32 i = 0; i < OutIntersectionsByRays.Num(); ++i)
-	{
-		OutIntersectionsByRays[i].Reserve(3 * VOCones.Num() - 1); // 3 * (N - 1) + 2
-	}
-
+	const int32 NumRays = IntersectionsByRays.Num();
+	
 	for (int32 i = 0; i < NumRays; ++i)
 	{
 		FVOCone ConeI = VOCones[i / 3];
@@ -152,8 +145,8 @@ void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TAr
 		}
 		
 		// Add start and end points
-		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P1, true /* doesn't matter */, 0.f });
-		OutIntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P2, true /* doesn't matter */, 1.f });
+		IntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P1, true /* doesn't matter */, 0.f });
+		IntersectionsByRays[i].Add(FVOConeIntersection{ SegmentI.P2, true /* doesn't matter */, 1.f });
 
 		for (int32 j = 0; j < NumRays; ++j)
 		{
@@ -195,13 +188,13 @@ void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones, TArray<TAr
 			if (TryFindIntersections(SegmentI, SegmentJ, &OutPoint, &OutT))
 			{
 				const bool bIsFirst = FVector2D::DotProduct(CurRayDir, NormalJ) > 0.f;
-				OutIntersectionsByRays[i].Add(FVOConeIntersection{ OutPoint, bIsFirst, OutT });
+				IntersectionsByRays[i].Add(FVOConeIntersection{ OutPoint, bIsFirst, OutT });
 			}
 		}
 	}
 }
 
-void UVOManager::SortIntersectionsByRays(const TArray<FVOCone>& VOCones, TArray<TArray<FVOConeIntersection>>& IntersectionsByRays) const
+void UVOManager::SortIntersectionsByRays(const TArray<FVOCone>& VOCones)
 {
 	for (int32 RayIdx = 0; RayIdx < IntersectionsByRays.Num(); ++RayIdx)
 	{
@@ -227,15 +220,8 @@ int32 UVOManager::CountVOsForPoint(const TArray<FVOCone>& VOCones, int32 ConeInd
 	return Count;
 }
 
-void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<TArray<FVOConeIntersection>>& IntersectionsByRays, const FVOParams& Params, TArray<TArray<FVOOutsideSegment>>& OutOutsideSegmentsByRays) const
+void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const FVOParams& Params)
 {
-	OutOutsideSegmentsByRays.Reset();
-	OutOutsideSegmentsByRays.SetNum(IntersectionsByRays.Num());
-	for (int32 i = 0; i < OutOutsideSegmentsByRays.Num(); ++i)
-	{
-		OutOutsideSegmentsByRays[i].Reserve(FMath::Max(0, IntersectionsByRays[i].Num()));
-	}
-
 	for (int32 RayIdx = 0; RayIdx < IntersectionsByRays.Num(); ++RayIdx)
 	{
 		bool bIsSegmentValid;
@@ -269,7 +255,7 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 					IntersectionsByRays[RayIdx][j].P,
 					Normal,
 				};
-				OutOutsideSegmentsByRays[RayIdx].Add(OutsideSegment);
+				OutsideSegmentsByRays[RayIdx].Add(OutsideSegment);
 			}
 
 			if (IntersectionsByRays[RayIdx][j].bIsFirst)
@@ -277,24 +263,6 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const TArray<T
 			else
 				CountOfVOs = FMath::Max(0, CountOfVOs - 1);
 		}
-	}
-}
-
-void UVOManager::GetRayApexNormalOffset(const TArray<FVOCone>& VOCones, int32 RayIndex, FVector2D& OutApex, FVector2D& OutNormal, float& OutOffset)
-{
-	const int32 ConeIdx = RayIndex / 2;
-	const bool bLeft = (RayIndex % 2 == 0);
-	if (bLeft)
-	{
-		OutApex   = VOCones[ConeIdx].LeftRayApex;
-		OutNormal = VOCones[ConeIdx].LeftRayNormal;
-		OutOffset = VOCones[ConeIdx].LeftRayOffset;
-	}
-	else
-	{
-		OutApex   = VOCones[ConeIdx].RightRayApex;
-		OutNormal = VOCones[ConeIdx].RightRayNormal;
-		OutOffset = VOCones[ConeIdx].RightRayOffset;
 	}
 }
 
@@ -358,40 +326,6 @@ FVOCone UVOManager::ComputeVOCone(const float R, const FVector2D& C, const FVect
 	}
 	
 	return Cone;
-}
-
-bool UVOManager::TryFindIntersections(const float A1, const float B1, const float C1,
-		const float A2, const float B2, const float C2,
-		FVector2D* OutPoint)
-{
-	float D = A1 * B2 - A2 * B1;
-	if (FMath::IsNearlyZero(D, KINDA_SMALL_NUMBER))
-		return false;
-	float DInv = 1.f / D;
-	if (OutPoint)
-	{
-		*OutPoint = FVector2D((B1 * C2 - B2 * C1) * DInv, (C1 * A2 - C2 * A1) * DInv);
-	}
-	return true;
-}
-
-bool UVOManager::TryFindIntersections(const float A1, const float B1, const float C1, FVector2D apex1, bool isLeftRay1,
-		const float A2, const float B2, const float C2, FVector2D apex2, bool isLeftRay2,
-		FVector2D* OutPoint)
-{
-	FVector2D IntersectionPoint;
-	if (!TryFindIntersections(A1, B1, C1, A2, B2, C2, &IntersectionPoint))
-		return false;
-	FVector2D RayDir1 = isLeftRay1 ? FVector2D(-B1, A1) : FVector2D(B1, -A1);
-	FVector2D RayDir2 = isLeftRay2 ? FVector2D(-B2, A2) : FVector2D(B2, -A2);
-	if (FVector2D::DotProduct(RayDir1, IntersectionPoint - apex1) <= 0.f
-		|| FVector2D::DotProduct(RayDir2, IntersectionPoint - apex2) <= 0.f)
-		return false;
-	if (OutPoint)
-	{
-		*OutPoint = IntersectionPoint;
-	}
-	return true;
 }
 
 bool UVOManager::TryFindIntersections(FVOSegment S1, FVOSegment S2, FVector2D* OutPoint, float* OutT)
@@ -593,7 +527,7 @@ void UVOManager::DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>&
 	}
 }
 
-void UVOManager::DrawCombinedVO(const UVOFollowingComponent* Comp, const TArray<TArray<FVOOutsideSegment>>& OutsideSegmentsByRays) const
+void UVOManager::DrawCombinedVO(const UVOFollowingComponent* Comp) const
 {
 	UWorld* W = Comp->GetWorld(); if (!W) return;
 	FVector P = Comp->GetOwnerLocation();
@@ -611,27 +545,26 @@ void UVOManager::DrawCombinedVO(const UVOFollowingComponent* Comp, const TArray<
 	}
 }
 
-FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params) const
+FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params)
 {
 	const FVector ActorPos = Comp->GetOwnerLocation();
 	UWorld* W = Comp->GetWorld();
 	const bool bDesiredForbidden = IsVelocityForbidden(FVector2D(DesiredVel.X, DesiredVel.Y), Neis, ActorPos, Params);
 	if (!bDesiredForbidden)
 		return DesiredVel.GetClampedToMaxSize2D(Params.MaxSpeed);
-	TArray<FVOCone> VOCones;
-	BuildVOCones(Neis, ActorPos, Params, VOCones);
-	TArray<TArray<FVOConeIntersection>> IntersectionsByRays;
-	CollectIntersections(VOCones, IntersectionsByRays);
-	SortIntersectionsByRays(VOCones, IntersectionsByRays);
-	TArray<TArray<FVOOutsideSegment>> OutsideSegmentsByRays;
-	ClassifySegments(VOCones, IntersectionsByRays, Params, OutsideSegmentsByRays);
+	
+	BuildVOCones(Neis, ActorPos, Params, VO_Cones);
+	CollectIntersections(VO_Cones);
+	SortIntersectionsByRays(VO_Cones);
+	ClassifySegments(VO_Cones, Params);
+	
 	if (Comp->bDebugDraw)
 	{
 		FlushPersistentDebugLines(Comp->GetWorld());
 		if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
-			DrawCombinedVO(Comp, OutsideSegmentsByRays);
+			DrawCombinedVO(Comp);
 		if (CVarVODebugShow.GetValueOnAnyThread() != 0)
-			DrawVOCones(Comp, VOCones);
+			DrawVOCones(Comp, VO_Cones);
 		for (auto N : Neis)
 		{
 			DrawDebugLine(W, N.Pos, N.Pos + N.Vel, Comp->DebugDrawColor, true, 15.f, 0, 0.3f);
@@ -639,4 +572,27 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 		DrawDebugCircle(W, Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
 	}
 	return DesiredVel;
+}
+
+void UVOManager::PrepareArrays(size_t NumNeis)
+{
+	// TODO: Think about shrinking
+	
+	VO_Cones.Reset();
+	VO_Cones.Reserve(NumNeis);
+
+	size_t NumRays = 3 * NumNeis;
+	IntersectionsByRays.SetNum(NumRays, EAllowShrinking::No);
+	for (int32 i = 0; i < IntersectionsByRays.Num(); ++i)
+	{
+		IntersectionsByRays[i].Reset();
+		IntersectionsByRays[i].Reserve(NumRays - 1); // 3 * (N - 1) + 2
+	}
+
+	OutsideSegmentsByRays.SetNum(NumRays, EAllowShrinking::No);
+	for (int32 i = 0; i < OutsideSegmentsByRays.Num(); ++i)
+	{
+		OutsideSegmentsByRays[i].Reset();
+		OutsideSegmentsByRays[i].Reserve(FMath::Max(0, IntersectionsByRays[i].Num()));
+	}
 }
