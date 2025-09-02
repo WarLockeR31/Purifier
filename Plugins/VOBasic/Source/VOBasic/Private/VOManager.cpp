@@ -1,4 +1,4 @@
-#include "UVOManager.h"
+#include "VOManager.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
 #include "GameFramework/Controller.h"
@@ -52,13 +52,13 @@ void UVOManager::Tick(float DeltaTime)
 			const FVector2D To2D(To.X, To.Y);
 			const float Dist = To2D.Size();
 			if (Dist > 1.f)
-				DesiredVel = FVector(To2D / Dist * Comp->Params.MaxSpeed, 0.f);
+				DesiredVel = FVector(To2D / Dist * Comp->GetEffectiveParams().MaxSpeed, 0.f);
 		}
 
 		const FVector CurVel = Comp->GetOwnerVelocity();
 
 		TArray<FVONeighborView> Neis;
-		const float Range = Comp->Params.NeighborRange;
+		const float Range = Comp->GetEffectiveParams().NeighborRange;
 		const float R2 = Range * Range;
 		for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
 		{
@@ -72,7 +72,7 @@ void UVOManager::Tick(float DeltaTime)
 
 		PrepareArrays(Neis.Num());;
 
-		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Comp->Params);
+		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Comp->GetEffectiveParams());
 
 		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
 		{

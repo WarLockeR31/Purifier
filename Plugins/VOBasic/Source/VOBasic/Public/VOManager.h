@@ -2,7 +2,7 @@
 #include "CoreMinimal.h"
 #include "CrowdManagerBase.h"
 #include "VOFollowingComponent.h"
-#include "UVOManager.generated.h"
+#include "VOManager.generated.h"
 
 USTRUCT()
 struct FVONeighborView

@@ -14,5 +14,11 @@ public:
 	AVOAIController(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	UFUNCTION(BlueprintCallable, Category="VO")
-	UVOFollowingComponent* GetVOFollowing() const { return FindComponentByClass<UVOFollowingComponent>(); }
+	UVOFollowingComponent* GetVOFollowing() const { return VOFollowingComponent.Get(); }
+
+protected:
+	virtual void OnPossess(APawn* InPawn) override;
+
+	//UPROPERTY(VisibleDefaultsOnly, Category = AI)
+	TObjectPtr<UVOFollowingComponent> VOFollowingComponent;
 };

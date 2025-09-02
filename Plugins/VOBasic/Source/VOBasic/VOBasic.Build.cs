@@ -37,6 +37,7 @@ public class VOBasic : ModuleRules
 			new string[]
 			{
 				"NavigationSystem",
+				"DeveloperSettings",
 			}
 			);
 		
