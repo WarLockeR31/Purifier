@@ -42,9 +42,9 @@ struct FVOCone
 	FVOSegment	LeftRaySegment;		// P1 - Closest to LeftRayApex
 	FVOSegment	RightRaySegment;	// P1 - Closest to RightRayApex
 	FVOSegment	TimeHorizonSegment;
-	bool		bIsLeftRaySegmentValid;
-	bool		bIsRightRaySegmentValid;
-	bool		bIsTHSegmentValid;
+	bool		bIsLeftRaySegmentValid  = false;
+	bool		bIsRightRaySegmentValid = false;
+	bool		bIsTHSegmentValid       = false;
 };
 
 struct FVOOutsideSegment
@@ -105,10 +105,37 @@ private:
 	void ClassifySegments(const TArray<FVOCone>& VOCones, const FVOParams& Params);
 	FVOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel, const FVOParams& Params) const;
 	bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const;
-	void DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>& Cone) const;
-	void DrawCombinedVO(const UVOFollowingComponent* Comp) const;
+
+	FVector2D SelectBestVelocityFromOutsideSegments(
+		const FVector2D& DesiredVel2D,
+		const FVector2D& CurVel2D,
+		const TArray<FVONeighborView>& Neis,
+		const FVector& ActorPos,
+		const FVOParams& Params
+	) const;
+
+	float ScoreVelocityCandidate(
+		const FVector2D& CandidateV,
+		const FVector2D& DesiredVel2D,
+		const FVector2D& CurVel2D,
+		const TArray<FVONeighborView>& Neis,
+		const FVector& ActorPos,
+		const FVOParams& Params
+	) const;
+
+	
 	FVector ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params);
 
+	void DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>& Cone) const;
+	void DrawCombinedVO(const UVOFollowingComponent* Comp) const;
+	void DrawVelocityCandidates(
+		const UVOFollowingComponent* Comp,
+		float PointSize = 10.f,
+		float LifeTime = 15.f
+	) const;
+
+	mutable TArray<FVector2D> Debug_LastCandidates;
+	mutable int32 Debug_BestCandidateIdx = -1;
 
 	// Helpers
 	void PrepareArrays(size_t NumNeis);

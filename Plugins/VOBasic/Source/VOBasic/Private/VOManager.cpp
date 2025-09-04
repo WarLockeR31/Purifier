@@ -118,6 +118,7 @@ void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones)
 		FVOCone ConeI = VOCones[i / 3];
 
 		bool bIsSegmentIValid;
+		
 		switch (i % 3)
 		{
 			case 0:	 bIsSegmentIValid = ConeI.bIsLeftRaySegmentValid;	break;
@@ -150,7 +151,7 @@ void UVOManager::CollectIntersections(const TArray<FVOCone>& VOCones)
 
 		for (int32 j = 0; j < NumRays; ++j)
 		{
-			if (i / 3 == j / 3)
+			if ((i / 3) == (j / 3))
 				continue;
 
 			FVOCone ConeJ = VOCones[j / 3];
@@ -246,6 +247,7 @@ void UVOManager::ClassifySegments(const TArray<FVOCone>& VOCones, const FVOParam
 		}
 
 		int32 CountOfVOs = CountVOsForPoint(VOCones, RayIdx / 3, FirstPoint);
+		
 		for (int32 j = 1; j < IntersectionsByRays[RayIdx].Num(); ++j)
 		{
 			if (CountOfVOs == 0)
@@ -417,7 +419,7 @@ bool UVOManager::TryFindSegmentOfRayInCircle(const FVector2D& Apex, const FVecto
 	// 1 Intersection
 	{
 		OutSegment->P1 = Apex;
-		OutSegment->P2 = t1 > 0.f ? P1 : P2;
+		OutSegment->P2 = t1 >= 0.f ? P1 : P2; // TODO: CHECK
 		return true;
 	}
 }
@@ -448,6 +450,7 @@ bool UVOManager::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D&
 
 	float Discriminant = b * b - 4.f * a * c;
 
+	// Graze case
 	if (FMath::IsNearlyZero(Discriminant, KINDA_SMALL_NUMBER) || Discriminant < 0.f)
 	{
 		return false;
@@ -475,8 +478,10 @@ bool UVOManager::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D&
 bool UVOManager::WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const
 {
 	const float PV = FVector2D::DotProduct(RelativePosition, RelativeVelocity);
+
 	if (PV <= 0.f)
 		return false;
+
 	const float VV = RelativeVelocity.SizeSquared();
 	const float PP = RelativePosition.SizeSquared();
 	const float R2 = Radius*Radius;
@@ -484,11 +489,14 @@ bool UVOManager::WillCollideWithinTau(const FVector2D& RelativePosition, const F
 	const float b = -2.f * PV;
 	const float c = PP - R2;
 	const float Disc = b*b - 4.f*a*c;
+
 	if (Disc < 0.f || a < 1e-6f)
 		return false;
+
 	const float SqrtDisc = FMath::Sqrt(Disc);
 	const float T1 = (-b - SqrtDisc) / (2.f*a);
 	const float T2 = (-b + SqrtDisc) / (2.f*a);
+
 	float THit = TNumericLimits<float>::Max();
 	if (T1 > 0.f)
 		THit = T1;
@@ -496,6 +504,7 @@ bool UVOManager::WillCollideWithinTau(const FVector2D& RelativePosition, const F
 		THit = T2;
 	else
 		return false;
+
 	if (THit <= TimeHorizon)
 	{
 		if (OutTOI)
@@ -503,6 +512,123 @@ bool UVOManager::WillCollideWithinTau(const FVector2D& RelativePosition, const F
 		return true;
 	}
 	return false;
+}
+
+float UVOManager::ScoreVelocityCandidate(
+	const FVector2D& V,
+	const FVector2D& DesiredVel2D,
+	const FVector2D& CurVel2D,
+	const TArray<FVONeighborView>& Neis,
+	const FVector& ActorPos,
+	const FVOParams& Params
+) const
+{
+	const float MaxSpeed = FMath::Max(Params.MaxSpeed, 1e-2f);
+	const float DesiredSize = DesiredVel2D.Size();
+	const float VSize = V.Size();
+
+	// Distance to DesiredVel2D (0..1)
+	const float distToDesired = (DesiredVel2D - V).Size();
+	const float proximity = 1.f - FMath::Clamp(distToDesired / MaxSpeed, 0.f, 1.f);
+
+	// Angle between V and DesiredVel2D (0..1)
+	float align = 0.5f; 
+	if (DesiredSize > KINDA_SMALL_NUMBER && VSize > KINDA_SMALL_NUMBER)
+	{
+		const float cosang = FVector2D::DotProduct(DesiredVel2D / DesiredSize, V / VSize); // -1..1
+		align = 0.5f * (cosang + 1.f); // -> 0..1
+	}
+
+	// Speed Preference (0..1)
+	const float speedPref = FMath::Clamp(VSize / MaxSpeed, 0.f, 1.f);
+
+	// Acceleration Penalty (0..1)
+	const float accelNorm = FMath::Clamp((V - CurVel2D).Size() / MaxSpeed, 0.f, 1.f);
+
+	// Weights // TODO: Move to config
+	const float WProximity  = 1.0f;
+	const float WAlign      = 0.5f;
+	const float WSpeed      = 0.2f;
+	const float WClearance  = 0.7f;
+	const float WAccelPen   = 0.3f;
+
+	// Score
+	const float score =
+		  WProximity * proximity
+		+ WAlign     * align
+		+ WSpeed     * speedPref
+		- WAccelPen  * accelNorm;
+
+	return score;
+}
+
+FVector2D UVOManager::SelectBestVelocityFromOutsideSegments(
+	const FVector2D& DesiredVel2D,
+	const FVector2D& CurVel2D,
+	const TArray<FVONeighborView>& Neis,
+	const FVector& ActorPos,
+	const FVOParams& Params
+) const
+{
+	Debug_LastCandidates.Reset();
+	Debug_BestCandidateIdx = -1;
+	
+	FVector2D bestV = FVector2D::ZeroVector;
+	float bestScore = TNumericLimits<float>::Lowest();
+	bool bFoundAny = false;
+
+	const float MaxSpeed = FMath::Max(Params.MaxSpeed, 1e-2f);
+
+	int32 candidateIdx = -1;
+
+	for (int32 rayIdx = 0; rayIdx < OutsideSegmentsByRays.Num(); ++rayIdx)
+	{
+		const TArray<FVOOutsideSegment>& segs = OutsideSegmentsByRays[rayIdx];
+		for (const FVOOutsideSegment& seg : segs)
+		{
+			const FVector2D candidates[2] = { seg.P1, seg.P2 };
+			for (const FVector2D& cand : candidates)
+			{
+				Debug_LastCandidates.Add(cand);
+				++candidateIdx;
+				
+				const float score = ScoreVelocityCandidate(cand, DesiredVel2D, CurVel2D, Neis, ActorPos, Params);
+				if (score > bestScore)
+				{
+					bestScore = score;
+					bestV = cand;
+					bFoundAny = true;
+					Debug_BestCandidateIdx = candidateIdx;
+				}
+			}
+		}
+	}
+
+	if (!bFoundAny) //TODO: Implement more complex selection
+	{
+		const FVector2D curClamped = CurVel2D.GetClampedToMaxSize(MaxSpeed);
+		const FVector2D softDesired = DesiredVel2D.GetClampedToMaxSize(MaxSpeed * 0.75f);
+
+		const int32 baseIdx = Debug_LastCandidates.Num();
+		Debug_LastCandidates.Add(curClamped);
+		Debug_LastCandidates.Add(softDesired);
+		
+		const float s1 = ScoreVelocityCandidate(curClamped, DesiredVel2D, CurVel2D, Neis, ActorPos, Params);
+		const float s2 = ScoreVelocityCandidate(softDesired, DesiredVel2D, CurVel2D, Neis, ActorPos, Params);
+
+		if (s2 > s1)
+		{
+			Debug_BestCandidateIdx = baseIdx + 1;
+			return softDesired;
+		}
+		else
+		{
+			Debug_BestCandidateIdx = baseIdx;
+			return curClamped;
+		}
+	}
+
+	return bestV;
 }
 
 void UVOManager::DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>& Cone) const
@@ -514,7 +640,8 @@ void UVOManager::DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>&
 		FVOCone curVO = Cone[i];
 		FColor Color = FColor::MakeRandomColor();
 		FVector2D curRayDir = FVector2D(-curVO.LeftRayNormal.Y, curVO.LeftRayNormal.X);
-		FVector Start = FVector(curVO.LeftRayApex.X, curVO.LeftRayApex.Y, 0.f);
+
+		/*FVector Start = FVector(curVO.LeftRayApex.X, curVO.LeftRayApex.Y, 0.f);
 		FVector End = Start + FVector(curRayDir.X, curRayDir.Y, 0.f) * 1000.f;
 		DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
 		curRayDir = FVector2D(curVO.RightRayNormal.Y, -curVO.RightRayNormal.X);
@@ -523,7 +650,31 @@ void UVOManager::DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>&
 		DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
 		Start = FVector(curVO.LeftRayApex.X, curVO.LeftRayApex.Y, 0.f);
 		End = FVector(curVO.RightRayApex.X, curVO.RightRayApex.Y, 0.f);
-		DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
+		DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);*/
+
+		FVector Start;
+		FVector End;
+
+		if (curVO.bIsLeftRaySegmentValid)
+		{
+			Start = FVector(curVO.LeftRaySegment.P1.X, curVO.LeftRaySegment.P1.Y, 0.f);
+			End = FVector(curVO.LeftRaySegment.P2.X, curVO.LeftRaySegment.P2.Y, 0.f);
+			DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
+		}
+		
+		if (curVO.bIsRightRaySegmentValid)
+		{
+			Start = FVector(curVO.RightRaySegment.P1.X, curVO.RightRaySegment.P1.Y, 0.f);
+			End = FVector(curVO.RightRaySegment.P2.X, curVO.RightRaySegment.P2.Y, 0.f);
+			DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
+		}
+
+		if (curVO.bIsTHSegmentValid)
+		{
+			Start = FVector(curVO.TimeHorizonSegment.P1.X, curVO.TimeHorizonSegment.P1.Y, 0.f);
+			End = FVector(curVO.TimeHorizonSegment.P2.X, curVO.TimeHorizonSegment.P2.Y, 0.f);
+			DrawDebugLine(W, Start + P, End + P, Color, true, 15.f, 0, 0.6f);
+		}
 	}
 }
 
@@ -545,6 +696,32 @@ void UVOManager::DrawCombinedVO(const UVOFollowingComponent* Comp) const
 	}
 }
 
+void UVOManager::DrawVelocityCandidates(
+	const UVOFollowingComponent* Comp,
+	float PointSize,
+	float LifeTime
+) const
+{
+	const FVector ActorPos = Comp->GetOwnerLocation();
+
+	UWorld* W = Comp->GetWorld();
+
+	const FColor CandidateColor(90, 180, 255); // голубой
+	const FColor BestColor(255, 220, 0);       // жёлтый
+
+	for (int32 i = 0; i < Debug_LastCandidates.Num(); ++i)
+	{
+		const FVector2D V = Debug_LastCandidates[i];
+		const FVector P = ActorPos + FVector(V.X, V.Y, 0.f);
+
+		const bool bIsBest = (i == Debug_BestCandidateIdx);
+		const FColor Col = bIsBest ? BestColor : CandidateColor;
+		const float Sz = bIsBest ? (PointSize * 1.7f) : PointSize;
+
+		DrawDebugPoint(W, P, Sz, Col, /*bPersistentLines*/ true, LifeTime);
+	}
+}
+
 FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params)
 {
 	const FVector ActorPos = Comp->GetOwnerLocation();
@@ -557,6 +734,15 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 	CollectIntersections(VO_Cones);
 	SortIntersectionsByRays(VO_Cones);
 	ClassifySegments(VO_Cones, Params);
+
+	const FVector2D best2D = SelectBestVelocityFromOutsideSegments(
+		FVector2D(DesiredVel.X, DesiredVel.Y),
+		FVector2D(CurVel.X, CurVel.Y),
+		Neis,
+		ActorPos,
+		Params
+	);
+	FVector OutVel = FVector(best2D.X, best2D.Y, 0.f);
 	
 	if (Comp->bDebugDraw)
 	{
@@ -570,8 +756,10 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 			DrawDebugLine(W, N.Pos, N.Pos + N.Vel, Comp->DebugDrawColor, true, 15.f, 0, 0.3f);
 		}
 		DrawDebugCircle(W, Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
+			
+		DrawVelocityCandidates(Comp, 10.f, 15.f);
 	}
-	return DesiredVel;
+	return OutVel;
 }
 
 void UVOManager::PrepareArrays(size_t NumNeis)
