@@ -6,6 +6,7 @@
 #include "GameFramework/PawnMovementComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "Stats/Stats.h"
 
 static TAutoConsoleVariable<int32> CVarVODebugShow(
     TEXT("vo.Show"), 0,
@@ -724,8 +725,10 @@ void UVOManager::DrawVelocityCandidates(
 
 FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params)
 {
+	SCOPE_CYCLE_COUNTER(STAT_VOComputeVelocity);
+	
 	const FVector ActorPos = Comp->GetOwnerLocation();
-	UWorld* W = Comp->GetWorld();
+	//UWorld* W = Comp->GetWorld();
 	const bool bDesiredForbidden = IsVelocityForbidden(FVector2D(DesiredVel.X, DesiredVel.Y), Neis, ActorPos, Params);
 	if (!bDesiredForbidden)
 		return DesiredVel.GetClampedToMaxSize2D(Params.MaxSpeed);
@@ -744,7 +747,7 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 	);
 	FVector OutVel = FVector(best2D.X, best2D.Y, 0.f);
 	
-	if (Comp->bDebugDraw)
+	/*if (Comp->bDebugDraw)
 	{
 		FlushPersistentDebugLines(Comp->GetWorld());
 		if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
@@ -758,7 +761,7 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 		DrawDebugCircle(W, Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
 			
 		DrawVelocityCandidates(Comp, 10.f, 15.f);
-	}
+	}*/
 	return OutVel;
 }
 

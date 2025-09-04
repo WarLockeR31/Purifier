@@ -4,6 +4,8 @@
 #include "VOFollowingComponent.h"
 #include "VOManager.generated.h"
 
+DECLARE_CYCLE_STAT(TEXT("VO Compute Velocity"), STAT_VOComputeVelocity, STATGROUP_Game);
+
 USTRUCT()
 struct FVONeighborView
 {
