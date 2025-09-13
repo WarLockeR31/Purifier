@@ -21,11 +21,8 @@ struct FVOSegment
 	FVector2D P2;
 };
 
-// Truncated VO
-USTRUCT(BlueprintType)
 struct FVOCone
 {
-	GENERATED_BODY()
 	FVector2D 	Apex;
 		
 	FVector2D 	LeftRayApex;  // Maybe unneeded
@@ -47,6 +44,97 @@ struct FVOCone
 	bool		bIsLeftRaySegmentValid  = false;
 	bool		bIsRightRaySegmentValid = false;
 	bool		bIsTHSegmentValid       = false;
+};
+
+// Truncated VO
+struct FVOConesSoA
+{
+	TArray<FVector2D> Apex;
+	
+	TArray<FVector2D> LeftRayApex;
+	TArray<FVector2D> LeftRayDir;
+	TArray<FVector2D> LeftRayNormal;
+	TArray<float> LeftRayOffset;
+	
+	TArray<FVector2D> RightRayApex;
+	TArray<FVector2D> RightRayDir;
+	TArray<FVector2D> RightRayNormal;
+	TArray<float> RightRayOffset;
+	
+	TArray<FVector2D> TimeHorizonNormal;
+	TArray<float> TimeHorizonOffset;
+
+	TArray<FVOSegment> LeftRaySegment;
+	TArray<FVOSegment> RightRaySegment;
+	TArray<FVOSegment> TimeHorizonSegment;
+	TArray<bool> bIsLeftRaySegmentValid;
+	TArray<bool> bIsRightRaySegmentValid;
+	TArray<bool> bIsTHSegmentValid;
+
+	void Reset()
+	{
+		Apex.Reset();
+		LeftRayApex.Reset();
+		LeftRayDir.Reset();
+		LeftRayNormal.Reset();
+		LeftRayOffset.Reset();
+		RightRayApex.Reset();
+		RightRayDir.Reset();
+		RightRayNormal.Reset();
+		RightRayOffset.Reset();
+		TimeHorizonNormal.Reset();
+		TimeHorizonOffset.Reset();
+		LeftRaySegment.Reset();
+		RightRaySegment.Reset();
+		TimeHorizonSegment.Reset();
+		bIsLeftRaySegmentValid.Reset();
+		bIsRightRaySegmentValid.Reset();
+		bIsTHSegmentValid.Reset();
+	}
+
+	void Reserve(int32 Num)
+	{
+		Apex.Reserve(Num);
+		LeftRayApex.Reserve(Num);
+		LeftRayDir.Reserve(Num);
+		LeftRayNormal.Reserve(Num);
+		LeftRayOffset.Reserve(Num);
+		RightRayApex.Reserve(Num);
+		RightRayDir.Reserve(Num);
+		RightRayNormal.Reserve(Num);
+		RightRayOffset.Reserve(Num);
+		TimeHorizonNormal.Reserve(Num);
+		TimeHorizonOffset.Reserve(Num);
+		LeftRaySegment.Reserve(Num);
+		RightRaySegment.Reserve(Num);
+		TimeHorizonSegment.Reserve(Num);
+		bIsLeftRaySegmentValid.Reserve(Num);
+		bIsRightRaySegmentValid.Reserve(Num);
+		bIsTHSegmentValid.Reserve(Num);
+	}
+
+	void Add(const FVOCone& Cone)
+	{
+		Apex.Add(Cone.Apex);
+		LeftRayApex.Add(Cone.LeftRayApex);
+		LeftRayDir.Add(Cone.LeftRayDir);
+		LeftRayNormal.Add(Cone.LeftRayNormal);
+		LeftRayOffset.Add(Cone.LeftRayOffset);
+		RightRayApex.Add(Cone.RightRayApex);
+		RightRayDir.Add(Cone.RightRayDir);
+		RightRayNormal.Add(Cone.RightRayNormal);
+		RightRayOffset.Add(Cone.RightRayOffset);
+		TimeHorizonNormal.Add(Cone.TimeHorizonNormal);
+		TimeHorizonOffset.Add(Cone.TimeHorizonOffset);
+		LeftRaySegment.Add(Cone.LeftRaySegment);
+		RightRaySegment.Add(Cone.RightRaySegment);
+		TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
+		bIsLeftRaySegmentValid.Add(Cone.bIsLeftRaySegmentValid);
+		bIsRightRaySegmentValid.Add(Cone.bIsRightRaySegmentValid);
+		bIsTHSegmentValid.Add(Cone.bIsTHSegmentValid);
+	}
+
+	int32 Num() const { return Apex.Num(); }
 };
 
 struct FVOOutsideSegment
@@ -79,12 +167,11 @@ public:
 private:
 	TArray<TWeakObjectPtr<UVOFollowingComponent>> Agents;
 
-	TArray<FVOCone>						VO_Cones;
+	FVOConesSoA VO_Cones;
 	TArray<TArray<FVOConeIntersection>> IntersectionsByRays;
 	TArray<TArray<FVOOutsideSegment>>	OutsideSegmentsByRays;
 
 	
-
 	/// 
 	/// @param S1 First segment
 	/// @param S2 Secont segment
@@ -100,11 +187,11 @@ private:
 	bool TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius, FVOSegment* OutSegment) const;
 
 	bool IsVelocityForbidden(const FVector2D& CandidateVA, const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVOParams& Params) const;
-	void BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVOParams& Params, TArray<FVOCone>& OutVOCones) const;
-	void CollectIntersections(const TArray<FVOCone>& VOCones);
-	void SortIntersectionsByRays(const TArray<FVOCone>& VOCones);
-	int32 CountVOsForPoint(const TArray<FVOCone>& VOCones, int32 ConeIndexToSkip, const FVector2D& P) const;
-	void ClassifySegments(const TArray<FVOCone>& VOCones, const FVOParams& Params);
+	void BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVOParams& Params, FVOConesSoA& OutVOCones) const;
+	void CollectIntersections(const FVOConesSoA& VOCones);
+	void SortIntersectionsByRays();
+	int32 CountVOsForPoint(const FVOConesSoA& VOCones, int32 ConeIndexToSkip, const FVector2D& P) const;
+	void ClassifySegments(const FVOConesSoA& VOCones, const FVOParams& Params);
 	FVOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel, const FVOParams& Params) const;
 	bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI) const;
 
@@ -128,7 +215,7 @@ private:
 	
 	FVector ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params);
 
-	void DrawVOCones(const UVOFollowingComponent* Comp, TArray<FVOCone>& Cone) const;
+	void DrawVOCones(const UVOFollowingComponent* Comp, const FVOConesSoA& VOCones) const;
 	void DrawCombinedVO(const UVOFollowingComponent* Comp) const;
 	void DrawVelocityCandidates(
 		const UVOFollowingComponent* Comp,
