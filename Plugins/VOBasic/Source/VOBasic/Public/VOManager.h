@@ -15,6 +15,7 @@ struct FVONeighborView
 	float Radius = 34.f;                 // cm
 };
 
+#pragma region VO
 struct FVOSegment
 {
 	FVector2D P1;
@@ -150,6 +151,7 @@ struct FVOConeIntersection
 	bool bIsFirst;
 	float t;
 };
+#pragma endregion
 
 UCLASS()
 class VOBASIC_API UVOManager : public UCrowdManagerBase

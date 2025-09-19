@@ -18,6 +18,8 @@ static TAutoConsoleVariable<int32> CVarCVODebugShow(
 	TEXT("Show VO cones (0/1). Per-component bDebugDraw also must be true."),
 	ECVF_Default);
 
+#define DEBUG_ON
+
 void UVOManager::OnNavDataRegistered(ANavigationData&){ }
 void UVOManager::OnNavDataUnregistered(ANavigationData&){ }
 void UVOManager::CleanUp(float){ }
@@ -548,9 +550,8 @@ float UVOManager::ScoreVelocityCandidate(
 
 	// Weights // TODO: Move to config
 	const float WProximity  = 1.0f;
-	const float WAlign      = 0.5f;
-	const float WSpeed      = 0.2f;
-	const float WClearance  = 0.7f;
+	const float WAlign      = 0.1f;
+	const float WSpeed      = 0.5f;
 	const float WAccelPen   = 0.3f;
 
 	// Score
@@ -727,7 +728,7 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 	SCOPE_CYCLE_COUNTER(STAT_VOComputeVelocity);
 	
 	const FVector ActorPos = Comp->GetOwnerLocation();
-	//UWorld* W = Comp->GetWorld();
+	
 	const bool bDesiredForbidden = IsVelocityForbidden(FVector2D(DesiredVel.X, DesiredVel.Y), Neis, ActorPos, Params);
 	if (!bDesiredForbidden)
 		return DesiredVel.GetClampedToMaxSize2D(Params.MaxSpeed);
@@ -745,8 +746,10 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 		Params
 	);
 	FVector OutVel = FVector(best2D.X, best2D.Y, 0.f);
-	
-	/*if (Comp->bDebugDraw)
+
+#ifdef DEBUG_ON
+	UWorld* W = Comp->GetWorld();
+	if (Comp->bDebugDraw)
 	{
 		FlushPersistentDebugLines(Comp->GetWorld());
 		if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
@@ -760,7 +763,8 @@ FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVe
 		DrawDebugCircle(W, Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
 			
 		DrawVelocityCandidates(Comp, 10.f, 15.f);
-	}*/
+	}
+#endif
 	return OutVel;
 }
 
