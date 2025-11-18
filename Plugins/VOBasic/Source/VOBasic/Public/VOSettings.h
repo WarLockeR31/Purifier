@@ -9,13 +9,6 @@
 
 #include "VOSettings.generated.h"
 
-UENUM(BlueprintType)
-enum class AvoidanceStyle : uint8
-{
-	VelocityObstacle,
-	AccelerationObstacle,
-};
-
 /**
  * Project-wide VO settings
  */
@@ -34,10 +27,6 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, Category="Presets", meta=(GetOptions="GetPresetNames"))
 	FName DefaultPreset;
-
-	UPROPERTY(EditAnywhere, Config, Category="General")
-	AvoidanceStyle AvoidanceStyle;
-	
 
 	static const UVOSettings* Get() { return GetDefault<UVOSettings>(); }
 

@@ -71,6 +71,18 @@ int32 UVOFollowingComponent::RemoveParamModifiersByTag(FName Tag)
 	return Removed;
 }
 
+void UVOFollowingComponent::SetAvoidanceStyle(EAvoidanceStyle NewStyle)
+{
+	EffectiveParams.AvoidanceStyle = NewStyle; // For instant application
+	AvoidanceStyleOverride = NewStyle;
+	bHasAvoidanceStyleOverride = true;
+}
+
+void UVOFollowingComponent::ResetAvoidanceStyle()
+{
+	bHasAvoidanceStyleOverride = false;
+	MarkEffectiveDirty();
+}
 
 
 const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
@@ -82,7 +94,7 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 	const UVOSettings* Settings = UVOSettings::Get();
 
 	// Base params (overrides or existing preset)
-	FVOParams Base = bUseOverrides ? Overrides : Settings->GetPresetOrDefault(VOProfile);
+	FVOParams Base = bUseOverrides ? Overrides : Settings->GetPresetOrDefault(VOProfile); // TODO: Caching current profile
 
 	EffectiveParams = Base;
 
@@ -102,7 +114,12 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 	EffectiveParams.MaxSpeed      = FMath::Max(0.f, EffectiveParams.MaxSpeed);
 	EffectiveParams.NeighborRange = FMath::Max(0.f, EffectiveParams.NeighborRange);
 	EffectiveParams.TauHorizon    = FMath::Max(0.01f, EffectiveParams.TauHorizon);
+	EffectiveParams.MaxAcceleration = FMath::Max(0.f, EffectiveParams.MaxAcceleration);
 
+	// Apply avoidance style override
+	if (bHasAvoidanceStyleOverride)
+		EffectiveParams.AvoidanceStyle = AvoidanceStyleOverride;
+	
 	bEffectiveDirty = false;
 	return EffectiveParams;
 }
@@ -122,10 +139,12 @@ void UVOFollowingComponent::ApplyModifierTo(FVOParams& P, const FVOParamModifier
 {
 	switch (M.Key)
 	{
-		case EVOParamKey::TauHorizon:    ApplyOp(P.TauHorizon,    M.Op, M.Magnitude); break;
-		case EVOParamKey::MaxSpeed:      ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); break;
-		case EVOParamKey::NeighborRange: ApplyOp(P.NeighborRange, M.Op, M.Magnitude); break;
-		case EVOParamKey::AgentRadius:   ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); break;
+		case EVOParamKey::TauHorizon:    	ApplyOp(P.TauHorizon,    M.Op, M.Magnitude); 	break;
+		case EVOParamKey::MaxSpeed:      	ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); 	break;
+		case EVOParamKey::NeighborRange: 	ApplyOp(P.NeighborRange, M.Op, M.Magnitude); 	break;
+		case EVOParamKey::AgentRadius:   	ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); 	break;
+
+		case EVOParamKey::MaxAcceleration:	ApplyOp(P.MaxAcceleration, M.Op, M.Magnitude);	break;
 	}
 }
 
