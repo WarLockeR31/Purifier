@@ -37,10 +37,28 @@ void UVOManager::UnregisterAgent(UVOFollowingComponent* Comp)
 
 void UVOManager::Tick(float DeltaTime)
 {
+	/*for (int32 i = Agents.Num() - 1; i >= 0; --i)
+	{
+		auto* Comp = Agents[i].Get();
+		if (!Comp)
+		{
+			Agents.RemoveAtSwap(i);
+		}
+	}*/
+
+	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+	{
+		UVOFollowingComponent* Comp = It.Get();
+		if (!Comp /*|| Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle*/)
+			continue;
+
+		Comp->UpdateKinematics(DeltaTime);
+	}
+	
 	for (int32 i = Agents.Num() - 1; i >= 0; --i)
 	{
 		auto* Comp = Agents[i].Get();
-		if (!Comp) { Agents.RemoveAtSwap(i); continue; }
+		if (!Comp) { Agents.RemoveAtSwap(i); continue; } //TODO: ???
 
 		APawn* P = nullptr;
 		if (const AController* C = Cast<AController>(Comp->GetOwner()))
@@ -59,7 +77,7 @@ void UVOManager::Tick(float DeltaTime)
 				DesiredVel = FVector(To2D / Dist * Comp->GetEffectiveParams().MaxSpeed, 0.f);
 		}
 
-		const FVector CurVel = Comp->GetOwnerVelocity();
+		const FVector CurVel = Comp->GetOwnerVelocity();					//TODO: Change to cached
 
 		TArray<FVONeighborView> Neis;
 		const float Range = Comp->GetEffectiveParams().NeighborRange;
@@ -70,13 +88,19 @@ void UVOManager::Tick(float DeltaTime)
 			if (!Other || Other == Comp) continue;
 			const FVector OP = Other->GetOwnerLocation();
 			if (FVector::DistSquared2D(Pos, OP) > R2) continue;
-			FVONeighborView V; V.Pos = OP; V.Vel = Other->GetOwnerVelocity(); V.Radius = Other->GetAgentRadius();
+
+			FVONeighborView V;
+			V.Pos = OP;
+			V.Vel = Other->GetOwnerVelocity();								//TODO: Change to cached
+			V.Acc = Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle ? Other->GetCachedAcceleration() : FVector::ZeroVector; // TODO: Think
+			V.Radius = Other->GetAgentRadius();
 			Neis.Add(V);
 		}
 
 		PrepareArrays(Neis.Num());;
-
-		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Comp->GetEffectiveParams());
+		
+		const FVOParams& Params = Comp->GetEffectiveParams();				// TODO: Move to start of tick?
+		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
 
 		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
 		{

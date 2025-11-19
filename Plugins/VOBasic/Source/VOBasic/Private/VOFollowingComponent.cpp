@@ -148,8 +148,6 @@ void UVOFollowingComponent::ApplyModifierTo(FVOParams& P, const FVOParamModifier
 	}
 }
 
-
-
 APawn* GetControlledPawn_Local(const UVOFollowingComponent* Comp)
 {
 	if (const AController* C = Cast<AController>(Comp->GetOwner()))
@@ -166,9 +164,34 @@ FVector UVOFollowingComponent::GetOwnerVelocity() const
 {
 	const APawn* P = GetControlledPawn_Local(this);
 	if (!P) return FVector::ZeroVector;
-	if (const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>())
+	if (const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>()) //TODO: Maybe unneeded
 	{
 		return Move->Velocity;
 	}
 	return FVector::ZeroVector;
+}
+
+void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
+{
+	const APawn* P = GetControlledPawn_Local(this);
+	if (!P) return;
+
+	const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>();
+	const FVector NewVel = Move ? Move->Velocity : FVector::ZeroVector;
+
+	if (bHasPrevVelocity && DeltaTime > KINDA_SMALL_NUMBER)
+	{
+		CachedAcceleration = (NewVel - CachedVelocity) / DeltaTime;
+		CachedAcceleration.Z = 0.f;
+	}
+
+	CachedVelocity   = NewVel;
+	bHasPrevVelocity = true;
+
+	if (const UCharacterMovementComponent* CharMove = Cast<UCharacterMovementComponent>(Move)) //TODO: Move to optimize
+	{
+		FVector Acc2D = CharMove->GetCurrentAcceleration();
+		Acc2D.Z = 0.f;
+		CachedAcceleration = Acc2D;
+	}
 }

@@ -87,6 +87,9 @@ public:
 	FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
 	EAvoidanceStyle GetAvoidanceStyle() const	{ return GetEffectiveParams().AvoidanceStyle; }
 
+	void			UpdateKinematics(float DeltaTime);
+	FVector			GetCachedVelocity()		const { return CachedVelocity; }
+	FVector			GetCachedAcceleration() const { return CachedAcceleration; }
 protected:
 	virtual void OnRegister() override;
 	virtual void OnUnregister() override;
@@ -117,4 +120,9 @@ private:
 	
 	bool    bHasGoal = false;
 	FVector Goal     = FVector::ZeroVector;
+
+	// Acceleration cache
+	FVector CachedVelocity     = FVector::ZeroVector;
+	FVector CachedAcceleration = FVector::ZeroVector;
+	bool    bHasPrevVelocity   = false;
 };
