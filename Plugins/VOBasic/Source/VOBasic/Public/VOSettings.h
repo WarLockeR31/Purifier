@@ -39,6 +39,12 @@ public:
 
 	FName ResolvePresetForPawnClass(UClass* PawnClass) const;
 
+	UPROPERTY(EditAnywhere, Config, Category="AO")
+	float NDiscreteIntervals = 10;
+
+	UPROPERTY(EditAnywhere, Config, Category="AO")
+	float MinimalReactionTime = 0.01f;
+
 	/** Collect names of presets (for BP/Editor). */
 	UFUNCTION(BlueprintCallable, Category="VO|Settings")
 	void GetPresetNames(TArray<FName>& OutNames) const

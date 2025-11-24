@@ -13,10 +13,10 @@ struct FAOConeIntersection;
 class VOBASIC_API AOUtility
 {
 public:
-	static void BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, 
+	static void BuildAOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVector& ActorVel,
 		const FVOParams& Params, FAOConesSoA& OutVOCones);
 	
-	static FAOCone ComputeVOCone(const float R, const FVector2D& C, const FVector2D& Vel, 
+	static FAOCone ComputeAOCone(const float R, const FVector2D& C, const FVector2D& Vel, const FVector2D& Acc,
 		const FVOParams& Params);
 
 	static bool TryFindIntersections(FAOSide S1, FAOSide S2, FVector2D* OutPoint, float* OutT);
@@ -65,4 +65,14 @@ public:
 		const FVector& DesiredVel, 
 		const TArray<FVONeighborView>& Neis, 
 		const FVOParams& Params);
+
+	static bool FindLineAndSegmentIntersection(
+		const FVector2D& LineNormal,
+		const float LineC,
+		const FVector2D& SegmentP1,
+		const FVector2D& SegmentP2,
+		float& OutT,
+		FVector2D& OutPoint);
+
+	static TArray<FVector2D> BuildConvexSide(const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals);
 };

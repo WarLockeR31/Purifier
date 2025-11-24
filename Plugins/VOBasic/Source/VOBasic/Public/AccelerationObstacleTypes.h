@@ -14,10 +14,8 @@ struct FAOSide
 
 struct FAOCone
 {
-	FVector2D 	Apex;
-
-	FVector2D   TimeHorizonSegment;
 	FVector2D   TimeHorizonNormal;
+	float		TimeHorizonOffset;
 		
 	FAOSide		LeftSide;
 	FAOSide		RightSide;
@@ -29,8 +27,6 @@ struct FAOCone
 
 struct FAOConesSoA
 {
-	TArray<FVector2D> Apex;
-
 	TArray<FVector2D>	TimeHorizonSegment;
 	TArray<FVector2D>	TimeHorizonNormal;
 
@@ -43,8 +39,6 @@ struct FAOConesSoA
 
 	void Reset()
 	{
-		Apex.Reset();
-
 		TimeHorizonSegment.Reset();
 		TimeHorizonNormal.Reset();
 
@@ -58,8 +52,6 @@ struct FAOConesSoA
 
 	void Reserve(int32 Num)
 	{
-		Apex.Reserve(Num);
-
 		TimeHorizonSegment.Reserve(Num);
 		TimeHorizonNormal.Reserve(Num);
 
@@ -73,8 +65,6 @@ struct FAOConesSoA
 
 	void Add(const FAOCone& Cone)
 	{
-		Apex.Add(Cone.Apex);
-		
 		TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
 		TimeHorizonNormal.Add(Cone.TimeHorizonNormal);
 
