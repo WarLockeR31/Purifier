@@ -100,11 +100,13 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	FVector2D TimeHorizonL = FVector2D::ZeroVector;
 	if (FindLineAndSegmentIntersection(TimeHorizonGrazeNormal, TimeHorizonC, GrazeSourceP, FirstL, outT, TimeHorizonL))
 	{
-		PointsL.Last() = TimeHorizonL;
+		PointsL.Add(TimeHorizonL);
+		NormalsL.Add(NormalsL.Last());
 	}
 
 	FVector2D TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
-	PointsR.Last() = TimeHorizonR;
+	PointsR.Add(TimeHorizonR);
+	NormalsR.Add(NormalsR.Last());
 	
 	Cone.TimeHorizonNormal = TimeHorizonGrazeNormal;
 	Cone.TimeHorizonOffset = TimeHorizonC;
@@ -116,7 +118,40 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	if (!isConvexR)
 		PointsR = BuildConvexSide(PointsR, NormalsR);
 
+	//TODO: Add self-intersection check
+	if (isConvexL)
+	{
+		
+	}
+	if (isConvexR)
+	{
+		
+	}
+	
 	// TODO: Full segments sides and circle validation
+	FVector2D PrevPoint = PointsL.Last();
+	for (int i = PointsL.Num() - 2; i >= 0; --i)
+	{
+		FVOSegment Segment;
+		if (TryFindSubSegmentInCircle(PrevPoint, PointsL[i], Params.MaxAcceleration, &Segment))
+		{
+			Cone.LeftSide.Segments.Add({Segment.P1, Segment.P2 /* TODO: Add normal */});
+		}
+		PrevPoint = PointsL[i];
+	}
+
+	PrevPoint = PointsR.Last();
+	for (int i = PointsR.Num() - 2; i >= 0; --i)
+	{
+		FVOSegment Segment;
+		if (TryFindSubSegmentInCircle(PrevPoint, PointsR[i], Params.MaxAcceleration, &Segment))
+		{
+			Cone.RightSide.Segments.Add({Segment.P1, Segment.P2 /* TODO: Add normal */});
+		}
+		PrevPoint = PointsR[i];
+	}
+
+	// TODO: We need all segments for inside check
 
 	return Cone;
 }
@@ -168,5 +203,149 @@ TArray<FVector2D> AOUtility::BuildConvexSide(const TArray<FVector2D>& Points, co
 	return ConvexSide;
 }
 
-// TODO: Nr = Nl
+bool AOUtility::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius,
+	FVOSegment* OutSegment)
+{
+	// Early return when both points inside circle 
+	float P1Squared = P1.SizeSquared();
+	float P2Squared = P2.SizeSquared();
+	float RR		= Radius * Radius;
+
+	if (P1Squared <= RR && P2Squared <= RR)
+	{
+		if (OutSegment)
+		{
+			OutSegment->P1 = P1;
+			OutSegment->P2 = P2;
+		}
+		return true;
+	}
+	
+	// Find t values for intersection points
+	FVector2D Delta = P2 - P1;
+	float a = Delta.SizeSquared();
+	float b = 2.f * FVector2D::DotProduct(P1, Delta);
+	float c = P1Squared - RR;
+
+	float Discriminant = b * b - 4.f * a * c;
+
+	// Graze case
+	if (FMath::IsNearlyZero(Discriminant, KINDA_SMALL_NUMBER) || Discriminant < 0.f)
+	{
+		return false;
+	}
+
+	float DiscSqrt = FMath::Sqrt(Discriminant);
+	float InvDenominator = 1.f / (2.f * a);
+	float t1 = (-b - DiscSqrt) * InvDenominator;
+	float t2 = (-b + DiscSqrt) * InvDenominator;
+
+	if (t1 > 1.f || t2 < 0.f)
+		return false;
+	
+	// Find intersection points
+	FVector2D OutPoint1 = (t1 < 0) ? P1 : P1 + Delta * t1;
+	FVector2D OutPoint2 = (t2 > 1) ? P2 : P1 + Delta * t2;
+	if (OutSegment)
+	{
+		OutSegment->P1 = OutPoint1;
+		OutSegment->P2 = OutPoint2;
+	}
+	return true;
+}
+
+bool AOUtility::TryFindSelfIntersections(
+	const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals,
+	const FVOSegment& TimeHorizonSegment, bool bIsRight,
+	RemoveSelfIntersectionsResult& OutResult)
+{
+	RemoveSelfIntersectionsResult PossibleResult;
+	bool bFoundPossibleResult = false;
+
+	int N = Points.Num();
+	for (int i = 2; i < N; ++i)
+	{
+		FVector2D IntersectionPoint;
+		
+		// Intersection with TH
+		if (SegmentIntersection2D(
+			TimeHorizonSegment.P1, TimeHorizonSegment.P2,
+			Points[i-1], Points[i],
+			IntersectionPoint))
+		{
+			OutResult = { i - 1, -1, i, true, true };
+			return true;
+		}
+
+		// Intersection with previous segments
+		for (int j = 1; j < i - 1; ++j)
+		{
+			if (SegmentIntersection2D(
+				Points[j-1], Points[j],
+				Points[i-1], Points[i],
+				IntersectionPoint))
+			{
+				OutResult = { i - j - 1, i - 1, j, false, true };
+				return true;
+			}
+		}
+
+		if (!bFoundPossibleResult && i < N - 1 && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.f)
+		{
+			PossibleResult = { 1, i, i < N - 2 ? i + 2 : i, false, false };
+			bFoundPossibleResult = true;
+		}
+
+		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.f)
+		{
+			PossibleResult = { 1, i - 2, i, false, false };
+			bFoundPossibleResult = true;
+		}
+	}
+
+	if (bFoundPossibleResult)
+	{
+		OutResult = PossibleResult;
+		return true;
+	}
+	
+	return false;
+}
+
+bool SegmentIntersection2D(
+	const FVector2D& P1, const FVector2D& P2,
+	const FVector2D& Q1, const FVector2D& Q2,
+	FVector2D& OutIntersection)
+{
+	const FVector2D r = P2 - P1;
+	const FVector2D s = Q2 - Q1;
+
+	auto Cross = [](const FVector2D& a, const FVector2D& b)
+	{
+		return a.X * b.Y - a.Y * b.X;
+	};
+
+	const float rxs = Cross(r, s);
+	const FVector2D q_p = Q1 - P1;
+	const float qpxr = Cross(q_p, r);
+
+	if (FMath::IsNearlyZero(rxs))
+	{
+		if (FMath::IsNearlyZero(qpxr))
+		{
+			return false; 
+		}
+		return false; 
+	}
+
+	const float t = Cross(q_p, s) / rxs;
+	const float u = Cross(q_p, r) / rxs;
+
+	if (t < 0.f || t > 1.f || u < 0.f || u > 1.f)
+		return false;
+
+	OutIntersection = P1 + t * r;
+	return true;
+}
+
 

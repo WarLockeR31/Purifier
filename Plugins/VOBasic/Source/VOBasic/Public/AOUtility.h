@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "VelocityObstacleTypes.h"
 #include "VOFollowingComponent.h"
 
 struct FVONeighborView;
@@ -74,5 +75,38 @@ public:
 		float& OutT,
 		FVector2D& OutPoint);
 
-	static TArray<FVector2D> BuildConvexSide(const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals);
+	static TArray<FVector2D> BuildConvexSide(
+		const TArray<FVector2D>& Points,
+		const TArray<FVector2D>& Normals);
+
+	static bool TryFindSubSegmentInCircle(
+		const FVector2D& P1, const FVector2D& P2,
+		float Radius,
+		FVOSegment* OutSegment);
+
+	struct RemoveSelfIntersectionsResult
+	{
+		int NumRemoved = 0;
+		int FirstGoodPointInd = 0;
+		int LastGoodPointInd = 0;
+		bool bIsIntersectsWithTH = false;
+		bool bFoundIntersection = false;
+	};
+	static bool TryFindSelfIntersections(
+		const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals,
+		const FVOSegment& TimeHorizonSegment, bool bIsRight,
+		RemoveSelfIntersectionsResult& OutResult);
+
+	static bool SegmentIntersection2D(
+		const FVector2D& P1, const FVector2D& P2,
+		const FVector2D& Q1, const FVector2D& Q2,
+		FVector2D& OutIntersection);
+
+	/*static float SideOfSegment2D(const FVector2D& A, const FVector2D& B, const FVector2D& P)
+	{
+		const FVector2D AB = B - A;
+		const FVector2D AP = P - A;
+
+		return AB.X * AP.Y - AB.Y * AP.X;
+	}*/
 };
