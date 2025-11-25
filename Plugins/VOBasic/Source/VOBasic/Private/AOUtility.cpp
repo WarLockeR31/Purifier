@@ -263,42 +263,44 @@ bool AOUtility::TryFindSelfIntersections(
 	bool bFoundPossibleResult = false;
 
 	int N = Points.Num();
-	for (int i = 2; i < N; ++i)
+	for (int i = N - 3; i >= 0; --i)
 	{
 		FVector2D IntersectionPoint;
+		const int CurIdx = i;
+		const int PrevIdx = i + 1;
 		
 		// Intersection with TH
 		if (SegmentIntersection2D(
 			TimeHorizonSegment.P1, TimeHorizonSegment.P2,
-			Points[i-1], Points[i],
+			Points[PrevIdx], Points[CurIdx],
 			IntersectionPoint))
 		{
-			OutResult = { i - 1, -1, i, true, true };
+			OutResult = { N - PrevIdx - 1, -1, CurIdx, true, true };
 			return true;
 		}
 
 		// Intersection with previous segments
-		for (int j = 1; j < i - 1; ++j)
+		for (int j = N - 2; j > PrevIdx; --j)
 		{
 			if (SegmentIntersection2D(
-				Points[j-1], Points[j],
-				Points[i-1], Points[i],
+				Points[j+1], Points[j],
+				Points[PrevIdx], Points[CurIdx],
 				IntersectionPoint))
 			{
-				OutResult = { i - j - 1, i - 1, j, false, true };
+				OutResult = { j - i - 1, j + 1, i, false, true };
 				return true;
 			}
 		}
 
-		if (!bFoundPossibleResult && i < N - 1 && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.f)
+		if (!bFoundPossibleResult && CurIdx > 0 && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.f)
 		{
-			PossibleResult = { 1, i, i < N - 2 ? i + 2 : i, false, false };
+			PossibleResult = { 1, i, CurIdx > 1 ? i - 2 : i, false, false };
 			bFoundPossibleResult = true;
 		}
 
-		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.f)
+		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.f)
 		{
-			PossibleResult = { 1, i - 2, i, false, false };
+			PossibleResult = { 1, i + 2, i, false, false };
 			bFoundPossibleResult = true;
 		}
 	}
