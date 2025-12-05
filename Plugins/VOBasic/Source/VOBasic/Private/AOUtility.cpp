@@ -119,6 +119,8 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		PointsR = BuildConvexSide(PointsR, NormalsR);
 
 	FVOSegment TimeHorizonSegment = {TimeHorizonL, TimeHorizonR};
+	int centerFanIndL = -1;
+	int centerFanIndR = -1;
 	
 	if (FVector2D::DotProduct(Vel, C) > 0.f)
 	{
@@ -138,14 +140,26 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 							TimeHorizonSegment.P2 = NewPoint;
 
 						Points.SetNum(Result.LastGoodPointInd + 1);
+						if (bIsLeft)
+							centerFanIndL = Result.LastGoodPointInd;
+						else
+							centerFanIndR = Result.LastGoodPointInd;
 						break;
 					}
 				case ERemoveInnerPointsResultType::SegmentIntersection:
-					Points.RemoveAt(Result.LastGoodPointInd + 1, Result.NumRemoved);		
+					Points.RemoveAt(Result.LastGoodPointInd + 1, Result.NumRemoved);
+					if (bIsLeft)
+						centerFanIndL = Result.LastGoodPointInd + 1;
+					else
+						centerFanIndR = Result.LastGoodPointInd + 1;
 					break;
 			
 				case ERemoveInnerPointsResultType::SinglePoint:
-					Points.RemoveAt(Result.FirstGoodPointInd - 1);		
+					Points.RemoveAt(Result.FirstGoodPointInd - 1);
+					if (bIsLeft)
+						centerFanIndL = Result.FirstGoodPointInd;
+					else
+						centerFanIndR = Result.FirstGoodPointInd;
 					break;
 
 				default:
@@ -165,30 +179,82 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		}
 	}
 	
-	// TODO: Full segments sides and circle validation
+	// Dumb validation
+	// TODO: Replace with VO-like validation
+	bool isValid = false;
 	FVector2D PrevPoint = PointsL.Last();
 	for (int i = PointsL.Num() - 2; i >= 0; --i)
 	{
 		FVOSegment Segment;
 		if (TryFindSubSegmentInCircle(PrevPoint, PointsL[i], Params.MaxAcceleration, &Segment))
 		{
-			Cone.LeftSide.Segments.Add({Segment.P1, Segment.P2 /* TODO: Add normal */});
+			isValid = true;
+			break;
 		}
 		PrevPoint = PointsL[i];
 	}
 
-	PrevPoint = PointsR.Last();
-	for (int i = PointsR.Num() - 2; i >= 0; --i)
+	if (!isValid)
 	{
-		FVOSegment Segment;
-		if (TryFindSubSegmentInCircle(PrevPoint, PointsR[i], Params.MaxAcceleration, &Segment))
+		PrevPoint = PointsR.Last();
+		for (int i = PointsR.Num() - 2; i >= 0; --i)
 		{
-			Cone.RightSide.Segments.Add({Segment.P1, Segment.P2 /* TODO: Add normal */});
+			FVOSegment Segment;
+			if (TryFindSubSegmentInCircle(PrevPoint, PointsR[i], Params.MaxAcceleration, &Segment))
+			{
+				isValid = true;
+				break;
+			}
+			PrevPoint = PointsR[i];
 		}
-		PrevPoint = PointsR[i];
 	}
+	
+	if (isValid)
+	{
+		Cone.isLeftSideValid = true;
+		Cone.isRightSideValid = true;
+		Cone.isTHSegmentValid = true;
+	}
+	
+	auto ZipSides = [&](const TArray<FVector2D>& SideA, const TArray<FVector2D>& SideB, int32 FanIndexA)
+	{
+		int32 IdxB = SideB.Num() - 1;
 
-	// TODO: We need all segments for inside check
+		for (int32 IdxA = SideA.Num() - 2; IdxA >= 0; --IdxA)
+		{
+			const int32 TopA = IdxA + 1;
+			const int32 BotA = IdxA;
+
+			if (TopA == FanIndexA)
+			{
+				const int32 Diff = SideB.Num() - SideA.Num();
+				if (Diff > 0)
+				{
+					for (int32 k = 0; k < Diff; ++k)
+					{
+						Cone.Tris.Add({ SideA[TopA], SideB[IdxB], SideB[IdxB - 1] });
+						IdxB--; 
+					}
+				}
+			}
+
+			if (IdxB > 0) 
+			{
+				Cone.Quads.Add({ SideA[TopA], SideA[BotA], SideB[IdxB - 1], SideB[IdxB] });
+				IdxB--;
+			}
+		}
+	};
+
+	if (isConvexL)
+	{
+		ZipSides(PointsL, PointsR, centerFanIndL);
+	}
+	
+	if (isConvexR)
+	{
+		ZipSides(PointsR, PointsL, centerFanIndR);
+	}
 
 	return Cone;
 }

@@ -1,5 +1,20 @@
 #pragma once
 
+struct FAOTriangle
+{
+	FVector2D P1;
+	FVector2D P2;
+	FVector2D P3;
+};
+
+struct FAOQuad
+{
+	FVector2D P1;
+	FVector2D P2;
+	FVector2D P3;
+	FVector2D P4;
+};
+
 struct FAOSegment
 {
 	FVector2D P1;
@@ -23,6 +38,9 @@ struct FAOCone
 	bool		isLeftSideValid;
 	bool		isRightSideValid;
 	bool		isTHSegmentValid;
+
+	TArray<FAOTriangle> Tris;
+	TArray<FAOQuad>		Quads;
 };
 
 struct FAOConesSoA
