@@ -84,17 +84,23 @@ public:
 		float Radius,
 		FVOSegment* OutSegment);
 
+	enum class ERemoveInnerPointsResultType : uint8
+	{
+		None,
+		SegmentIntersection,
+		THIntersection,
+		SinglePoint
+	};
 	struct RemoveSelfIntersectionsResult
 	{
+		ERemoveInnerPointsResultType ResultType = ERemoveInnerPointsResultType::None;
 		int NumRemoved = 0;
 		int FirstGoodPointInd = 0;
 		int LastGoodPointInd = 0;
-		bool bIsIntersectsWithTH = false;
-		bool bFoundIntersection = false;
 	};
 	static bool TryFindSelfIntersections(
 		const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals,
-		const FVOSegment& TimeHorizonSegment, bool bIsRight,
+		const FVOSegment& TimeHorizonSegment,
 		RemoveSelfIntersectionsResult& OutResult);
 
 	static bool SegmentIntersection2D(

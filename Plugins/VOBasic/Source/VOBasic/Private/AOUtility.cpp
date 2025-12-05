@@ -118,14 +118,51 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	if (!isConvexR)
 		PointsR = BuildConvexSide(PointsR, NormalsR);
 
-	//TODO: Add self-intersection check
-	if (isConvexL)
+	FVOSegment TimeHorizonSegment = {TimeHorizonL, TimeHorizonR};
+	
+	if (FVector2D::DotProduct(Vel, C) > 0.f)
 	{
+		auto ProcessSideIntersections = [&](TArray<FVector2D>& Points, const TArray<FVector2D>& Normals, bool bIsLeft)
+		{
+			RemoveSelfIntersectionsResult Result;
+			if (TryFindSelfIntersections(Points, Normals, TimeHorizonSegment, Result))
+			{
+				switch (Result.ResultType)
+				{
+				case ERemoveInnerPointsResultType::THIntersection:
+					{
+						const FVector2D& NewPoint = Points[Result.LastGoodPointInd];
+						if (bIsLeft)
+							TimeHorizonSegment.P1 = NewPoint;
+						else
+							TimeHorizonSegment.P2 = NewPoint;
+
+						Points.SetNum(Result.LastGoodPointInd + 1);
+						break;
+					}
+				case ERemoveInnerPointsResultType::SegmentIntersection:
+					Points.RemoveAt(Result.LastGoodPointInd + 1, Result.NumRemoved);		
+					break;
+			
+				case ERemoveInnerPointsResultType::SinglePoint:
+					Points.RemoveAt(Result.FirstGoodPointInd - 1);		
+					break;
+
+				default:
+					break;
+				}
+			}
+		};
+
+		if (isConvexL)
+		{
+			ProcessSideIntersections(PointsL, NormalsL, true);
+		}
 		
-	}
-	if (isConvexR)
-	{
-		
+		if (isConvexR)
+		{
+			ProcessSideIntersections(PointsR, NormalsR, false);
+		}
 	}
 	
 	// TODO: Full segments sides and circle validation
@@ -256,7 +293,7 @@ bool AOUtility::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& 
 
 bool AOUtility::TryFindSelfIntersections(
 	const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals,
-	const FVOSegment& TimeHorizonSegment, bool bIsRight,
+	const FVOSegment& TimeHorizonSegment,
 	RemoveSelfIntersectionsResult& OutResult)
 {
 	RemoveSelfIntersectionsResult PossibleResult;
@@ -275,7 +312,7 @@ bool AOUtility::TryFindSelfIntersections(
 			Points[PrevIdx], Points[CurIdx],
 			IntersectionPoint))
 		{
-			OutResult = { N - PrevIdx - 1, -1, CurIdx, true, true };
+			OutResult = { ERemoveInnerPointsResultType::THIntersection, N - PrevIdx, -1, CurIdx };
 			return true;
 		}
 
@@ -287,20 +324,20 @@ bool AOUtility::TryFindSelfIntersections(
 				Points[PrevIdx], Points[CurIdx],
 				IntersectionPoint))
 			{
-				OutResult = { j - i - 1, j + 1, i, false, true };
+				OutResult = { ERemoveInnerPointsResultType::SegmentIntersection, j - i, j + 1, i };
 				return true;
 			}
 		}
 
 		if (!bFoundPossibleResult && CurIdx > 0 && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.f)
 		{
-			PossibleResult = { 1, i, CurIdx > 1 ? i - 2 : i, false, false };
+			PossibleResult = { ERemoveInnerPointsResultType::SinglePoint, 1, i, CurIdx > 1 ? i - 2 : i };
 			bFoundPossibleResult = true;
 		}
 
 		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.f)
 		{
-			PossibleResult = { 1, i + 2, i, false, false };
+			PossibleResult = { ERemoveInnerPointsResultType::SinglePoint, 1, i + 2, i };
 			bFoundPossibleResult = true;
 		}
 	}
