@@ -1,4 +1,6 @@
 #include "VOManager.h"
+
+#include "AOUtility.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
 #include "GameFramework/Controller.h"
@@ -37,10 +39,28 @@ void UVOManager::UnregisterAgent(UVOFollowingComponent* Comp)
 
 void UVOManager::Tick(float DeltaTime)
 {
+	/*for (int32 i = Agents.Num() - 1; i >= 0; --i)
+	{
+		auto* Comp = Agents[i].Get();
+		if (!Comp)
+		{
+			Agents.RemoveAtSwap(i);
+		}
+	}*/
+
+	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+	{
+		UVOFollowingComponent* Comp = It.Get();
+		if (!Comp /*|| Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle*/)
+			continue;
+
+		Comp->UpdateKinematics(DeltaTime);
+	}
+	
 	for (int32 i = Agents.Num() - 1; i >= 0; --i)
 	{
 		auto* Comp = Agents[i].Get();
-		if (!Comp) { Agents.RemoveAtSwap(i); continue; }
+		if (!Comp) { Agents.RemoveAtSwap(i); continue; } //TODO: ???
 
 		APawn* P = nullptr;
 		if (const AController* C = Cast<AController>(Comp->GetOwner()))
@@ -59,7 +79,7 @@ void UVOManager::Tick(float DeltaTime)
 				DesiredVel = FVector(To2D / Dist * Comp->GetEffectiveParams().MaxSpeed, 0.f);
 		}
 
-		const FVector CurVel = Comp->GetOwnerVelocity();
+		const FVector CurVel = Comp->GetOwnerVelocity();					//TODO: Change to cached
 
 		TArray<FVONeighborView> Neis;
 		const float Range = Comp->GetEffectiveParams().NeighborRange;
@@ -70,13 +90,45 @@ void UVOManager::Tick(float DeltaTime)
 			if (!Other || Other == Comp) continue;
 			const FVector OP = Other->GetOwnerLocation();
 			if (FVector::DistSquared2D(Pos, OP) > R2) continue;
-			FVONeighborView V; V.Pos = OP; V.Vel = Other->GetOwnerVelocity(); V.Radius = Other->GetAgentRadius();
+
+			FVONeighborView V;
+			V.Pos = OP;
+			V.Vel = Other->GetOwnerVelocity();								//TODO: Change to cached
+			V.Acc = Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle ? Other->GetCachedAcceleration() : FVector::ZeroVector; // TODO: Think
+			V.Radius = Other->GetAgentRadius();
 			Neis.Add(V);
 		}
 
-		PrepareArrays(Neis.Num());;
+		PrepareArrays(Neis.Num());
+		const FVOParams& Params = Comp->GetEffectiveParams();				// TODO: Move to start of tick?
 
-		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Comp->GetEffectiveParams());
+		// AO Visual Debug
+		if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
+		{
+			if (Comp->HasVOGoal())
+			{
+				const FVector GoalDir = (Comp->GetMoveGoal() - Pos).GetSafeNormal();
+				FVector DesiredAcc = GoalDir * Params.MaxAcceleration;
+				FAOConesSoA TestAOCones;
+				
+				AOUtility::BuildAOCones(Neis, Pos, CurVel, Params, TestAOCones);
+
+				FlushPersistentDebugLines(Comp->GetWorld());
+			
+				AOUtility::DrawAOCones(Comp, TestAOCones);
+
+				if (!DesiredAcc.IsZero())
+				{
+					DrawDebugLine(Comp->GetWorld(), Pos, Pos + DesiredAcc, FColor::Green, false, -1.f, 0, 2.0f);
+				}
+			}
+
+			DrawDebugLine(Comp->GetWorld(), Pos, Pos + CurVel, FColor::Blue, false, -1.f, 0, 1.5f);
+
+			return;
+		}
+		
+		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
 
 		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
 		{

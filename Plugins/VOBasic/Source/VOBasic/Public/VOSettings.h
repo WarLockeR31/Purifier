@@ -9,13 +9,6 @@
 
 #include "VOSettings.generated.h"
 
-UENUM(BlueprintType)
-enum class AvoidanceStyle : uint8
-{
-	VelocityObstacle,
-	AccelerationObstacle,
-};
-
 /**
  * Project-wide VO settings
  */
@@ -35,10 +28,6 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category="Presets", meta=(GetOptions="GetPresetNames"))
 	FName DefaultPreset;
 
-	UPROPERTY(EditAnywhere, Config, Category="General")
-	AvoidanceStyle AvoidanceStyle;
-	
-
 	static const UVOSettings* Get() { return GetDefault<UVOSettings>(); }
 
 	const FVOParams* FindPreset(FName Name) const
@@ -49,6 +38,12 @@ public:
 	const FVOParams& GetPresetOrDefault(FName Name) const;
 
 	FName ResolvePresetForPawnClass(UClass* PawnClass) const;
+
+	UPROPERTY(EditAnywhere, Config, Category="AO")
+	float NDiscreteIntervals = 10;
+
+	UPROPERTY(EditAnywhere, Config, Category="AO")
+	float MinimalReactionTime = 0.01f;
 
 	/** Collect names of presets (for BP/Editor). */
 	UFUNCTION(BlueprintCallable, Category="VO|Settings")

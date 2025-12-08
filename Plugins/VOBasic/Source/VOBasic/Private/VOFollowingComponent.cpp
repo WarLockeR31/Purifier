@@ -71,6 +71,18 @@ int32 UVOFollowingComponent::RemoveParamModifiersByTag(FName Tag)
 	return Removed;
 }
 
+void UVOFollowingComponent::SetAvoidanceStyle(EAvoidanceStyle NewStyle)
+{
+	EffectiveParams.AvoidanceStyle = NewStyle; // For instant application
+	AvoidanceStyleOverride = NewStyle;
+	bHasAvoidanceStyleOverride = true;
+}
+
+void UVOFollowingComponent::ResetAvoidanceStyle()
+{
+	bHasAvoidanceStyleOverride = false;
+	MarkEffectiveDirty();
+}
 
 
 const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
@@ -82,7 +94,7 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 	const UVOSettings* Settings = UVOSettings::Get();
 
 	// Base params (overrides or existing preset)
-	FVOParams Base = bUseOverrides ? Overrides : Settings->GetPresetOrDefault(VOProfile);
+	FVOParams Base = bUseOverrides ? Overrides : Settings->GetPresetOrDefault(VOProfile); // TODO: Caching current profile
 
 	EffectiveParams = Base;
 
@@ -102,7 +114,12 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 	EffectiveParams.MaxSpeed      = FMath::Max(0.f, EffectiveParams.MaxSpeed);
 	EffectiveParams.NeighborRange = FMath::Max(0.f, EffectiveParams.NeighborRange);
 	EffectiveParams.TauHorizon    = FMath::Max(0.01f, EffectiveParams.TauHorizon);
+	EffectiveParams.MaxAcceleration = FMath::Max(0.f, EffectiveParams.MaxAcceleration);
 
+	// Apply avoidance style override
+	if (bHasAvoidanceStyleOverride)
+		EffectiveParams.AvoidanceStyle = AvoidanceStyleOverride;
+	
 	bEffectiveDirty = false;
 	return EffectiveParams;
 }
@@ -122,14 +139,14 @@ void UVOFollowingComponent::ApplyModifierTo(FVOParams& P, const FVOParamModifier
 {
 	switch (M.Key)
 	{
-		case EVOParamKey::TauHorizon:    ApplyOp(P.TauHorizon,    M.Op, M.Magnitude); break;
-		case EVOParamKey::MaxSpeed:      ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); break;
-		case EVOParamKey::NeighborRange: ApplyOp(P.NeighborRange, M.Op, M.Magnitude); break;
-		case EVOParamKey::AgentRadius:   ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); break;
+		case EVOParamKey::TauHorizon:    	ApplyOp(P.TauHorizon,    M.Op, M.Magnitude); 	break;
+		case EVOParamKey::MaxSpeed:      	ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); 	break;
+		case EVOParamKey::NeighborRange: 	ApplyOp(P.NeighborRange, M.Op, M.Magnitude); 	break;
+		case EVOParamKey::AgentRadius:   	ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); 	break;
+
+		case EVOParamKey::MaxAcceleration:	ApplyOp(P.MaxAcceleration, M.Op, M.Magnitude);	break;
 	}
 }
-
-
 
 APawn* GetControlledPawn_Local(const UVOFollowingComponent* Comp)
 {
@@ -145,11 +162,59 @@ FVector UVOFollowingComponent::GetOwnerLocation() const
 
 FVector UVOFollowingComponent::GetOwnerVelocity() const
 {
+	if (bUseFakeVelocity)
+	{
+		return FakeVelocity;
+	}
+	
 	const APawn* P = GetControlledPawn_Local(this);
 	if (!P) return FVector::ZeroVector;
-	if (const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>())
+	if (const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>()) //TODO: Maybe unneeded
 	{
 		return Move->Velocity;
 	}
 	return FVector::ZeroVector;
+}
+
+void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
+{
+	const APawn* P = GetControlledPawn_Local(this);
+	if (!P) return;
+
+	const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>();
+	/*const*/ FVector NewVel = Move ? Move->Velocity : FVector::ZeroVector;
+	
+	if (bUseFakeVelocity)
+	{
+		NewVel = FakeVelocity;
+	}
+	
+	if (bHasPrevVelocity && DeltaTime > KINDA_SMALL_NUMBER)
+	{
+		CachedAcceleration = (NewVel - CachedVelocity) / DeltaTime;
+		CachedAcceleration.Z = 0.f;
+	}
+
+	CachedVelocity   = NewVel;
+	bHasPrevVelocity = true;
+
+	if (const UCharacterMovementComponent* CharMove = Cast<UCharacterMovementComponent>(Move)) //TODO: Move to optimize
+	{
+		FVector Acc2D = CharMove->GetCurrentAcceleration();
+		Acc2D.Z = 0.f;
+		CachedAcceleration = Acc2D;
+	}
+}
+
+// TODO: Delete
+void UVOFollowingComponent::SetFakeVelocity(const FVector& InVelocity)
+{
+	FakeVelocity = InVelocity;
+	bUseFakeVelocity = true;
+}
+
+void UVOFollowingComponent::ClearFakeVelocity()
+{
+	bUseFakeVelocity = false;
+	FakeVelocity = FVector::ZeroVector;
 }

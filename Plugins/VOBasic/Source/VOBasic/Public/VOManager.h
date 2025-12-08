@@ -14,6 +14,7 @@ struct FVONeighborView
 	GENERATED_BODY()
 	FVector Pos = FVector::ZeroVector;   // world XY
 	FVector Vel = FVector::ZeroVector;   // world XY
+	FVector Acc = FVector::ZeroVector;   // world XY
 	float Radius = 34.f;                 // cm
 };
 
