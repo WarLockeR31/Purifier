@@ -162,6 +162,11 @@ FVector UVOFollowingComponent::GetOwnerLocation() const
 
 FVector UVOFollowingComponent::GetOwnerVelocity() const
 {
+	if (bUseFakeVelocity)
+	{
+		return FakeVelocity;
+	}
+	
 	const APawn* P = GetControlledPawn_Local(this);
 	if (!P) return FVector::ZeroVector;
 	if (const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>()) //TODO: Maybe unneeded
@@ -177,8 +182,13 @@ void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
 	if (!P) return;
 
 	const UMovementComponent* Move = P->FindComponentByClass<UMovementComponent>();
-	const FVector NewVel = Move ? Move->Velocity : FVector::ZeroVector;
-
+	/*const*/ FVector NewVel = Move ? Move->Velocity : FVector::ZeroVector;
+	
+	if (bUseFakeVelocity)
+	{
+		NewVel = FakeVelocity;
+	}
+	
 	if (bHasPrevVelocity && DeltaTime > KINDA_SMALL_NUMBER)
 	{
 		CachedAcceleration = (NewVel - CachedVelocity) / DeltaTime;
@@ -194,4 +204,17 @@ void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
 		Acc2D.Z = 0.f;
 		CachedAcceleration = Acc2D;
 	}
+}
+
+// TODO: Delete
+void UVOFollowingComponent::SetFakeVelocity(const FVector& InVelocity)
+{
+	FakeVelocity = InVelocity;
+	bUseFakeVelocity = true;
+}
+
+void UVOFollowingComponent::ClearFakeVelocity()
+{
+	bUseFakeVelocity = false;
+	FakeVelocity = FVector::ZeroVector;
 }

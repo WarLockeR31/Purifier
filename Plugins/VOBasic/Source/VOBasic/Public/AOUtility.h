@@ -108,6 +108,8 @@ public:
 		const FVector2D& Q1, const FVector2D& Q2,
 		FVector2D& OutIntersection);
 
+	static void DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones);
+
 	/*static float SideOfSegment2D(const FVector2D& A, const FVector2D& B, const FVector2D& P)
 	{
 		const FVector2D AB = B - A;

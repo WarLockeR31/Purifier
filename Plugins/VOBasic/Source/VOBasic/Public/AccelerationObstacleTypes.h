@@ -55,9 +55,12 @@ struct FAOConesSoA
 	TArray<bool>		isRightSideValid;
 	TArray<bool>		isTHSegmentValid;
 
+	TArray<TArray<FAOTriangle>> Tris;
+	TArray<TArray<FAOQuad>>		Quads;
+
 	void Reset()
 	{
-		TimeHorizonSegment.Reset();
+		//TimeHorizonSegment.Reset();
 		TimeHorizonNormal.Reset();
 
 		LeftSide.Reset();
@@ -66,11 +69,14 @@ struct FAOConesSoA
 		isLeftSideValid.Reset();
 		isRightSideValid.Reset();
 		isTHSegmentValid.Reset();
+
+		Tris.Reset();
+		Quads.Reset();
 	}
 
 	void Reserve(int32 Num)
 	{
-		TimeHorizonSegment.Reserve(Num);
+		//TimeHorizonSegment.Reserve(Num);
 		TimeHorizonNormal.Reserve(Num);
 
 		LeftSide.Reserve(Num);
@@ -79,11 +85,14 @@ struct FAOConesSoA
 		isLeftSideValid.Reserve(Num);
 		isRightSideValid.Reserve(Num);
 		isTHSegmentValid.Reserve(Num);
+
+		Tris.Reserve(Num);
+		Quads.Reserve(Num);
 	}
 
 	void Add(const FAOCone& Cone)
 	{
-		TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
+		//TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
 		TimeHorizonNormal.Add(Cone.TimeHorizonNormal);
 
 		LeftSide.Add(Cone.LeftSide);
@@ -92,9 +101,12 @@ struct FAOConesSoA
 		isLeftSideValid.Add(Cone.isLeftSideValid);
 		isRightSideValid.Add(Cone.isRightSideValid);
 		isTHSegmentValid.Add(Cone.isTHSegmentValid);
+
+		Tris.Add(Cone.Tris);
+		Quads.Add(Cone.Quads);
 	}
 
-	int32 Num() const { return Apex.Num(); }
+	int32 Num() const { return isLeftSideValid.Num(); }
 };
 
 struct FAOConeIntersection

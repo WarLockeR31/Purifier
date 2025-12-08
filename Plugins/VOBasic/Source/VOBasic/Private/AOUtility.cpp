@@ -32,7 +32,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	float t = Settings->MinimalReactionTime;
 	float t_interval = (Params.TauHorizon - Settings->MinimalReactionTime) / Settings->NDiscreteIntervals;
 	float t_last = Params.TauHorizon;
-	for (int i = 0; i > Settings->NDiscreteIntervals; ++i)
+	for (int i = 0; i < Settings->NDiscreteIntervals; ++i)
 	{
 		float InvT = 1.f / t;
 		float InvSqrT = InvT * InvT;
@@ -45,6 +45,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		float DistanceSqr = GrazeToCenterLengthSqr - RTimed * RTimed;
 		if (DistanceSqr < 0.f)
 		{
+			//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Neg sqr dist"));
 			t_last = t;
 			break;
 		}
@@ -52,7 +53,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		float RTimedOverGrazeToCenterLenSqr = RTimed / GrazeToCenterLengthSqr;
 		float k_h = RTimedOverGrazeToCenterLenSqr * FMath::Sqrt(DistanceSqr);
 		FVector2D b = CenterLineP + RTimed * RTimedOverGrazeToCenterLenSqr * GrazeToCenterOffset;
-		FVector2D c = k_h * FVector2D(GrazeToCenterOffset.Y, -GrazeToCenterOffset.X);
+		FVector2D c = k_h * FVector2D(-GrazeToCenterOffset.Y, GrazeToCenterOffset.X);
 		FVector2D PointL = b + c;
 		FVector2D PointR = b - c;
 
@@ -62,22 +63,30 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		// Check if convex
 		if (i == 0)
 		{
+			FString Msg = FString::Printf(TEXT("L: %.2f | R: %.2f"), GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X, GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
+			
 			if (GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X >= 0.f)
 				isConvexL = true;
-			if (GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X <= 0.f)
+			if (GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X <= 0.f)
 				isConvexR = true;
+
+			/*Msg = FString::Printf(TEXT("X: %.2f | Y: %.2f"), GrazeSourceP.X, GrazeSourceP.Y);
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, Msg);*/
 		}
 
-		// Calculate normals in points if not convex (not normalized)
+		// Calculate normals 
 		FVector2D DirGraze = PointL - GrazeSourceP;
-		if (!isConvexL)
-			NormalsL.Add({DirGraze.Y, -DirGraze.X});
-		if (!isConvexR)
-			NormalsR.Add({-DirGraze.Y, DirGraze.X});
+		NormalsL.Add({-DirGraze.Y, DirGraze.X});
+		DirGraze = PointR - GrazeSourceP;
+		NormalsR.Add({DirGraze.Y, -DirGraze.X});
 		
 		t += t_interval;
 	}
 
+	t -= t_interval;
+	if (PointsL.Num() == 0)
+		return Cone;
 	
 	// Calculate TimeHorizon Points
 	float InvT = 1.f / t;
@@ -93,30 +102,39 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	float		RTimedOverGrazeToCenterLen = RTimed / FMath::Sqrt(GrazeToCenterLengthSqr);	//d_ratio
 	FVector2D 	GrazeOffsetFromCenter = RTimedOverGrazeToCenterLen * GrazeToCenterOffset;
 	FVector2D 	TimeHorizonGrazePoint = CenterLineP + GrazeOffsetFromCenter;				//P_TH
-	FVector2D 	TimeHorizonGrazeNormal = -GrazeToCenterOffset.GetSafeNormal();				//n_TH
+	FVector2D 	TimeHorizonGrazeNormal = -GrazeOffsetFromCenter.GetSafeNormal();			//n_TH
 	float		TimeHorizonC = -TimeHorizonGrazeNormal.Dot(TimeHorizonGrazePoint);
 
 	float outT = 0.f;
 	FVector2D TimeHorizonL = FVector2D::ZeroVector;
+	FVector2D TimeHorizonR  = FVector2D::ZeroVector;
 	if (FindLineAndSegmentIntersection(TimeHorizonGrazeNormal, TimeHorizonC, GrazeSourceP, FirstL, outT, TimeHorizonL))
 	{
+		//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("THL"));
 		PointsL.Add(TimeHorizonL);
-		NormalsL.Add(NormalsL.Last());
+		const FVector2D LastNormL = NormalsL.Last();
+		NormalsL.Add(LastNormL);
+
+		TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
+		PointsR.Add(TimeHorizonR);
+		const FVector2D LastNormR = NormalsR.Last();
+		NormalsR.Add(LastNormR);
 	}
 
-	FVector2D TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
-	PointsR.Add(TimeHorizonR);
-	NormalsR.Add(NormalsR.Last());
+	
 	
 	Cone.TimeHorizonNormal = TimeHorizonGrazeNormal;
 	Cone.TimeHorizonOffset = TimeHorizonC;
 
 
 	// Build convex points
-	if (!isConvexL)
+	if (isConvexL)
 		PointsL = BuildConvexSide(PointsL, NormalsL);
-	if (!isConvexR)
+	if (isConvexR)
 		PointsR = BuildConvexSide(PointsR, NormalsR);
+
+	/*FString Msg = FString::Printf(TEXT("PL: %d | NL: %d | LR: %d | NR: %d"), PointsL.Num(), NormalsL.Num(), PointsR.Num(), NormalsR.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, Msg);*/
 
 	FVOSegment TimeHorizonSegment = {TimeHorizonL, TimeHorizonR};
 	int centerFanIndL = -1;
@@ -133,6 +151,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 				{
 				case ERemoveInnerPointsResultType::THIntersection:
 					{
+						//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, TEXT("THI"));
 						const FVector2D& NewPoint = Points[Result.LastGoodPointInd];
 						if (bIsLeft)
 							TimeHorizonSegment.P1 = NewPoint;
@@ -147,6 +166,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 						break;
 					}
 				case ERemoveInnerPointsResultType::SegmentIntersection:
+					//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, TEXT("SI"));
 					Points.RemoveAt(Result.LastGoodPointInd + 1, Result.NumRemoved);
 					if (bIsLeft)
 						centerFanIndL = Result.LastGoodPointInd + 1;
@@ -155,6 +175,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 					break;
 			
 				case ERemoveInnerPointsResultType::SinglePoint:
+					//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, TEXT("SP"));
 					Points.RemoveAt(Result.FirstGoodPointInd - 1);
 					if (bIsLeft)
 						centerFanIndL = Result.FirstGoodPointInd;
@@ -168,12 +189,12 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 			}
 		};
 
-		if (isConvexL)
+		if (!isConvexL)
 		{
 			ProcessSideIntersections(PointsL, NormalsL, true);
 		}
 		
-		if (isConvexR)
+		if (!isConvexR)
 		{
 			ProcessSideIntersections(PointsR, NormalsR, false);
 		}
@@ -246,14 +267,19 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		}
 	};
 
-	if (isConvexL)
+	if (!isConvexL && isConvexR)
 	{
 		ZipSides(PointsL, PointsR, centerFanIndL);
 	}
+	else
 	
-	if (isConvexR)
+	if (!isConvexR && isConvexL)
 	{
 		ZipSides(PointsR, PointsL, centerFanIndR);
+	}
+	else
+	{
+		ZipSides(PointsR, PointsL, -1);
 	}
 
 	return Cone;
@@ -263,8 +289,8 @@ bool AOUtility::FindLineAndSegmentIntersection(const FVector2D& LineNormal, cons
 	const FVector2D& SegmentP1, const FVector2D& SegmentP2,
 	float& outT, FVector2D& outPoint)
 {
-	const float signedDistStart = FVector2D::DotProduct(LineNormal, SegmentP1);	// s_THL1
-	const float signedDistEnd   = FVector2D::DotProduct(LineNormal, SegmentP2);   // s_THL2
+	const float signedDistStart = FVector2D::DotProduct(LineNormal, SegmentP1) + LineC;	// s_THL1
+	const float signedDistEnd   = FVector2D::DotProduct(LineNormal, SegmentP2) + LineC;   // s_THL2
 
 	const float denom = signedDistStart - signedDistEnd;
 	if (FMath::IsNearlyZero(denom))
@@ -395,13 +421,13 @@ bool AOUtility::TryFindSelfIntersections(
 			}
 		}
 
-		if (!bFoundPossibleResult && CurIdx > 0 && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.f)
+		if (!bFoundPossibleResult && CurIdx > 0 && FVector2D::DotProduct(Normals[i], Points[i-1] - Points[i]) > 0.01f)
 		{
 			PossibleResult = { ERemoveInnerPointsResultType::SinglePoint, 1, i, CurIdx > 1 ? i - 2 : i };
 			bFoundPossibleResult = true;
 		}
 
-		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.f)
+		if (!bFoundPossibleResult && FVector2D::DotProduct(Normals[i], Points[i+1] - Points[i]) > 0.01f)
 		{
 			PossibleResult = { ERemoveInnerPointsResultType::SinglePoint, 1, i + 2, i };
 			bFoundPossibleResult = true;
@@ -417,7 +443,7 @@ bool AOUtility::TryFindSelfIntersections(
 	return false;
 }
 
-bool SegmentIntersection2D(
+bool AOUtility::SegmentIntersection2D(
 	const FVector2D& P1, const FVector2D& P2,
 	const FVector2D& Q1, const FVector2D& Q2,
 	FVector2D& OutIntersection)
@@ -453,4 +479,41 @@ bool SegmentIntersection2D(
 	return true;
 }
 
+void AOUtility::DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones)
+{
+	UWorld* W = Comp->GetWorld(); 
+	if (!W) return;
 
+	FVector P = Comp->GetOwnerLocation();
+
+	for (int32 i = 0; i < Cones.Num(); ++i)
+	{
+		FColor Color = FColor::MakeRandomColor();
+
+		const TArray<FAOTriangle>& ConeTris = Cones.Tris[i];
+		for (const FAOTriangle& Tri : ConeTris)
+		{
+			FVector V1(Tri.P1.X, Tri.P1.Y, 0.f);
+			FVector V2(Tri.P2.X, Tri.P2.Y, 0.f);
+			FVector V3(Tri.P3.X, Tri.P3.Y, 0.f);
+
+			DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
+			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
+			DrawDebugLine(W, P + V3, P + V1, Color, true, 15.f, 0, 0.6f);
+		}
+
+		const TArray<FAOQuad>& ConeQuads = Cones.Quads[i];
+		for (const FAOQuad& Quad : ConeQuads)
+		{
+			FVector V1(Quad.P1.X, Quad.P1.Y, 0.f);
+			FVector V2(Quad.P2.X, Quad.P2.Y, 0.f);
+			FVector V3(Quad.P3.X, Quad.P3.Y, 0.f);
+			FVector V4(Quad.P4.X, Quad.P4.Y, 0.f);
+
+			DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
+			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
+			DrawDebugLine(W, P + V3, P + V4, Color, true, 15.f, 0, 0.6f);
+			DrawDebugLine(W, P + V4, P + V1, Color, true, 15.f, 0, 0.6f);
+		}
+	}
+}

@@ -62,7 +62,7 @@ class VOBASIC_API UVOFollowingComponent : public UPathFollowingComponent
 public:
 	UVOFollowingComponent();
 	
-	UPROPERTY(EditAnywhere, Category="VO|Debug")	bool		bDebugDraw = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO|Debug")	bool		bDebugDraw = false;
 	UPROPERTY(EditAnywhere, Category="VO|Debug")	FColor		DebugDrawColor = FColor::Red;
 	UPROPERTY(EditAnywhere, Category="VO")			FVOParams	Params;
 	
@@ -78,8 +78,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category="VO") const FVOParams& GetEffectiveParams() const;
 	
 	UFUNCTION(BlueprintCallable, Category="VO") void SetMoveGoal(const FVector& InGoal) { bHasGoal = true; Goal = InGoal; }
-	UFUNCTION(BlueprintCallable, Category="VO") void ClearMoveGoal()					{ bHasGoal = false; }	
+	UFUNCTION(BlueprintCallable, Category="VO") void ClearMoveGoal()					{ bHasGoal = false; }
 
+	// TODO: Delete
+	UFUNCTION(BlueprintCallable, Category="VO|Debug")
+	void SetFakeVelocity(const FVector& InVelocity);
+
+	UFUNCTION(BlueprintCallable, Category="VO|Debug")
+	void ClearFakeVelocity();
+
+	
 	FVector 		GetOwnerLocation()	const;
 	FVector 		GetOwnerVelocity()	const;
 	float   		GetAgentRadius()	const	{ return GetEffectiveParams().AgentRadius; }
@@ -125,4 +133,8 @@ private:
 	FVector CachedVelocity     = FVector::ZeroVector;
 	FVector CachedAcceleration = FVector::ZeroVector;
 	bool    bHasPrevVelocity   = false;
+
+	// TODO: Delete
+	bool bUseFakeVelocity = false;
+	FVector FakeVelocity = FVector::ZeroVector;
 };
