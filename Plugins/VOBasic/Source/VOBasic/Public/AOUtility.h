@@ -10,62 +10,93 @@ struct FAOSegment;
 struct FAOSide;
 struct FAOCone;
 struct FAOConeIntersection;
+struct FAOWorkSegment;
 
 class VOBASIC_API AOUtility
 {
 public:
-	static void BuildAOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVector& ActorVel,
-		const FVOParams& Params, FAOConesSoA& OutVOCones);
+	static FVector ComputeBestAcceleration(
+		const UVOFollowingComponent* Comp,
+		const FVector& CurVel,
+		const FVector& DesiredVel,
+		const TArray<FVONeighborView>& Neis,
+		const FVOParams& Params,
+		// External buffers (owned by Manager)
+		FAOConesSoA& AOCones,
+		TArray<FAOWorkSegment>& WorkSegments,
+		TArray<TArray<FAOConeIntersection>>& SideIntersections,
+		TArray<TArray<FAOSegment>>& OutsideSegments,
+		TArray<FVector2D>& Candidates,
+		int32& BestCandidateIdx
+	);
 	
-	static FAOCone ComputeAOCone(const float R, const FVector2D& C, const FVector2D& Vel, const FVector2D& Acc,
-		const FVOParams& Params);
+	static void BuildAOCones(
+		const TArray<FVONeighborView>& Neis,
+		const FVector& ActorPos, const FVector& ActorVel,
+		const FVOParams& Params,
+		FAOConesSoA& OutVOCones
+	);
 
-	static bool TryFindIntersections(FAOSide S1, FAOSide S2, FVector2D* OutPoint, float* OutT);
+	static void PrepareAndSortWorkSegments(
+		const FAOConesSoA& InCones,
+		TArray<FAOWorkSegment>& OutWorkSegments, int32& OutTotalSides
+	);
 
-	// TODO: Do this functionality in FAOSide construction
-	/*static bool TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius,
-		FVOSegment* OutSegment);*/
-	
-	static float ScoreAccelerationCandidate(const FVector2D& A, const FVector2D& DesiredAccel2D,
-		const FVector2D& CurAccel2D, const TArray<FVONeighborView>& Neis,
-		const FVector& ActorPos, const FVOParams& Params);
-	
-	static void DrawVOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones);
-	
-	static void DrawCombinedVO(const UVOFollowingComponent* Comp, 
-		const TArray<TArray<FAOSegment>>& OutsideSegmentsByRays);
-	
-	static void DrawVelocityCandidates(const UVOFollowingComponent* Comp, 
-		const TArray<FVector2D>& Candidates, int32 BestCandidateIdx,
-		float PointSize, float LifeTime);
+	static void CollectIntersections(const TArray<FAOWorkSegment>& WorkSegments, TArray<TArray<FAOConeIntersection>>& OutSideIntersections);
 
-	static void CollectIntersections(const FAOConesSoA& VOCones, 
-		TArray<TArray<FAOConeIntersection>>& IntersectionsByRays);
-	
-	static void SortIntersectionsByRays(TArray<TArray<FAOConeIntersection>>& IntersectionsByRays);
-	
-	static int32 CountVOsForPoint(const FAOConesSoA& VOCones, int32 ConeIndexToSkip, const FVector2D& P);
-	
-	static void ClassifySegments(const FAOConesSoA& VOCones, const FVOParams& Params, 
-		const TArray<TArray<FAOConeIntersection>>& IntersectionsByRays,
-		TArray<TArray<FAOSegment>>& OutsideSegmentsByRays);
+	static void SortSideIntersections(TArray<TArray<FAOConeIntersection>>& SideIntersections);
 
-	static FVector2D SelectBestVelocityFromOutsideSegments(
-		const FVector2D& DesiredVel2D,
-		const FVector2D& CurVel2D,
+	static void ClassifySegments(
+		const FAOConesSoA& Cones,
+		const TArray<TArray<FAOConeIntersection>>& SideIntersections,
+		TArray<TArray<FAOSegment>>& OutOutsideSegments
+	);
+	
+	/*static void ProcessCandidates(
+		const FAOConesSoA& Cones,
+		const TArray<TArray<FAOConeIntersection>>& SideIntersections,
+		const FVector2D& DesiredAcc,
+		TArray<FVector2D>& OutCandidates
+	);*/
+
+	/*static FVector2D SelectBestCandidate(
+		const TArray<FVector2D>& Candidates,
+		const FVector2D& DesiredAcc,
+		const FVector2D& CurAcc,
 		const TArray<FVONeighborView>& Neis,
 		const FVector& ActorPos,
 		const FVOParams& Params,
-		const TArray<TArray<FAOSegment>>& OutsideSegmentsByRays,
-		TArray<FVector2D>& Debug_LastCandidates,
-		int32& Debug_BestCandidateIdx
+		int32& OutBestIdx
+	);*/
+
+	static FVector2D SelectBestAccelerationFromOutsideSegments(
+	const FVector2D& DesiredAcc,
+	const FVector2D& CurAcc,
+	const TArray<FVONeighborView>& Neis,
+	const FVector& ActorPos,
+	const FVOParams& Params,
+	const FAOConesSoA& Cones,
+	const TArray<TArray<FAOSegment>>& OutsideSegmentsByRays,
+	TArray<FVector2D>& OutCandidates,
+	int32& OutBestIdx
+);
+
+	// Функция оценки (Score), которую я забыл в прошлый раз
+	static float ScoreAccelerationCandidate(
+		const FVector2D& CandidateAcc,
+		const FVector2D& DesiredAcc,
+		const FVector2D& CurAcc,
+		const TArray<FVONeighborView>& Neis,
+		const FVector& ActorPos,
+		const FVOParams& Params
 	);
 
-	static FVector ComputeVelocity(const UVOFollowingComponent* Comp, 
-		const FVector& CurVel, 
-		const FVector& DesiredVel, 
-		const TArray<FVONeighborView>& Neis, 
-		const FVOParams& Params);
+	// Helpers
+	static FAOCone ComputeAOCone(float R, const FVector2D& C, const FVector2D& Vel, const FVector2D& Acc, const FVOParams& Params);
+	static bool IsPointInsideAnyAO(const FAOConesSoA& Cones, const FVector2D& P, int32 IgnoreConeIdx);
+	static bool IsPointInsideAO(const FAOConesSoA& Cones, int32 ConeIdx, const FVector2D& P);
+	static int32 CountAOsForPoint(const FAOConesSoA& Cones, int32 ConeIndexToSkip, const FVector2D& P);
+	static bool IsPointInTriangle(const FVector2D& P, const FVector2D& A, const FVector2D& B, const FVector2D& C);
 
 	static bool FindLineAndSegmentIntersection(
 		const FVector2D& LineNormal,
@@ -108,8 +139,16 @@ public:
 		const FVector2D& Q1, const FVector2D& Q2,
 		FVector2D& OutIntersection);
 
-	static void DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones);
+	static void DrawAOCones(
+		const UVOFollowingComponent* Comp,
+		const FAOConesSoA& Cones
+	);
 
+	static void DrawAOOutsideSegments(
+		const UVOFollowingComponent* Comp, 
+		const TArray<TArray<FAOSegment>>& OutsideSegments
+	);
+	
 	/*static float SideOfSegment2D(const FVector2D& A, const FVector2D& B, const FVector2D& P)
 	{
 		const FVector2D AB = B - A;
@@ -117,4 +156,13 @@ public:
 
 		return AB.X * AP.Y - AB.Y * AP.X;
 	}*/
+
+	static FColor GetColorFromSeed(int32 Seed)
+	{
+		uint32 Hash = Seed * 2654435761; 
+    
+		uint8 Hue = (Hash) & 0xFF; 
+
+		return FLinearColor::MakeFromHSV8(Hue, 255, 255).ToFColor(true);
+	}
 };

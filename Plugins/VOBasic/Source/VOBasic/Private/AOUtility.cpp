@@ -2,6 +2,428 @@
 #include "VOManager.h"
 #include "VOSettings.h"
 
+FVector AOUtility::ComputeBestAcceleration(
+	const UVOFollowingComponent* Comp,
+	const FVector& CurVel,
+	const FVector& DesiredVel,
+	const TArray<FVONeighborView>& Neis,
+	const FVOParams& Params,
+	FAOConesSoA& AOCones,
+	TArray<FAOWorkSegment>& WorkSegments,
+	TArray<TArray<FAOConeIntersection>>& SideIntersections,
+	TArray<TArray<FAOSegment>>& OutsideSegments, 
+	TArray<FVector2D>& Candidates,
+	int32& BestCandidateIdx)
+{
+	const FVector ActorPos = Comp->GetOwnerLocation();
+
+	AOCones.Reset();
+	BuildAOCones(Neis, ActorPos, CurVel, Params, AOCones);
+
+	int32 TotalSides = 0;
+	PrepareAndSortWorkSegments(AOCones, WorkSegments, TotalSides);
+
+	SideIntersections.SetNum(TotalSides);
+	
+	for (int32 i = 0; i < TotalSides; ++i)
+		SideIntersections[i].Reset();
+
+	CollectIntersections(WorkSegments, SideIntersections);
+	SortSideIntersections(SideIntersections);
+	ClassifySegments(AOCones, SideIntersections, OutsideSegments);
+
+	// TODO: Desired acc calculation
+	FVector2D DesiredAcc2D = FVector2D::ZeroVector;
+	if (!DesiredVel.IsZero())
+	{
+		FVector2D DV(DesiredVel.X, DesiredVel.Y);
+		FVector2D CV(CurVel.X, CurVel.Y);
+		
+		FVector2D Diff = (DV - CV); 
+		Diff *= 4.0f; 
+
+		if (Diff.SizeSquared() > Params.MaxAcceleration * Params.MaxAcceleration)
+		{
+			DesiredAcc2D = Diff.GetSafeNormal() * Params.MaxAcceleration;
+		}
+		else
+		{
+			DesiredAcc2D = Diff;
+		}
+	}
+
+	// TODO: Cur Acceleration
+	FVector2D CurAcc2D(0.f, 0.f); 
+	
+	FVector2D Best = SelectBestAccelerationFromOutsideSegments(
+		DesiredAcc2D,
+		CurAcc2D,
+		Neis,
+		ActorPos,
+		Params,
+		AOCones,
+		OutsideSegments,
+		Candidates,
+		BestCandidateIdx
+	);
+
+	return FVector(Best.X, Best.Y, 0.f);
+}
+
+void AOUtility::PrepareAndSortWorkSegments(const FAOConesSoA& InCones, TArray<FAOWorkSegment>& OutWorkSegments, int32& OutTotalSides)
+{
+	OutWorkSegments.Reset();
+	OutTotalSides = InCones.Num() * 3; // L, R, TH
+
+	for (int32 i = 0; i < InCones.Num(); ++i)
+	{
+		auto AddSideToWork = [&](const TArray<FAOSegment>& Segments, int32 SideIdx)
+		{
+			for (int32 s = 0; s < Segments.Num(); ++s)
+			{
+				// TODO: Sort when adding?
+				FAOWorkSegment& WS = OutWorkSegments.Add_GetRef(FAOWorkSegment());
+				WS.ConeIdx = i;
+				WS.SideIdx = SideIdx; // 0=Left, 1=Right, 2=TH
+				WS.SegIdx = s;
+				WS.SegmentRef = &Segments[s];
+			}
+		};
+
+		// Left (SideIdx = 0)
+		if (InCones.isLeftSideValid[i])
+		{
+			AddSideToWork(InCones.LeftSide[i].Segments, 0);
+		}
+
+		// Right (SideIdx = 1)
+		if (InCones.isRightSideValid[i])
+		{
+			AddSideToWork(InCones.RightSide[i].Segments, 1);
+		}
+
+		// Time Horizon (SideIdx = 2)
+		if (InCones.isTHSegmentValid[i])
+		{			
+			FAOWorkSegment& WS = OutWorkSegments.Add_GetRef(FAOWorkSegment());
+			WS.ConeIdx = i;
+			WS.SideIdx = 2; 
+			WS.SegIdx = 0;  
+			WS.SegmentRef = &InCones.TimeHorizonSegment[i];
+		}
+	}
+
+	// Sort by MinX
+	OutWorkSegments.Sort([](const FAOWorkSegment& A, const FAOWorkSegment& B) {
+		return A.SegmentRef->MinX < B.SegmentRef->MinX;
+	});
+}
+
+void AOUtility::CollectIntersections(const TArray<FAOWorkSegment>& WorkSegments, TArray<TArray<FAOConeIntersection>>& OutSideIntersections)
+{
+    const int32 NumWork = WorkSegments.Num();
+
+	for (int32 i = 0; i < NumWork; ++i)
+	{
+		const FAOWorkSegment& W = WorkSegments[i];
+		int32 FlatSideIdx = W.ConeIdx * 3 + W.SideIdx;
+		
+		OutSideIntersections[FlatSideIdx].Add({ W.SegmentRef->P1, 0.f, W.SegIdx, false, false });
+		OutSideIntersections[FlatSideIdx].Add({ W.SegmentRef->P2, 1.f, W.SegIdx, false, false });
+	}
+
+	for (int32 i = 0; i < NumWork; ++i)
+	{
+		const FAOWorkSegment& WA = WorkSegments[i];
+		const FAOSegment& SegA = *WA.SegmentRef;
+
+		for (int32 j = i + 1; j < NumWork; ++j)
+		{
+			const FAOWorkSegment& WB = WorkSegments[j];
+			const FAOSegment& SegB = *WB.SegmentRef;
+
+			// AABB
+			if (SegB.MinX > SegA.MaxX) break; 
+			if (SegA.MaxY < SegB.MinY || SegA.MinY > SegB.MaxY) continue;
+			if (WA.ConeIdx == WB.ConeIdx) continue; 
+
+			FVector2D IntP;
+			if (SegmentIntersection2D(SegA.P1, SegA.P2, SegB.P1, SegB.P2, IntP))
+			{
+				FVector2D DirA = (SegA.P2 - SegA.P1);
+				float LenSqA = DirA.SizeSquared();
+				float tA = (LenSqA > KINDA_SMALL_NUMBER) ? FVector2D::DotProduct(IntP - SegA.P1, DirA) / LenSqA : 0.f;
+
+				FVector2D DirB = (SegB.P2 - SegB.P1);
+				float LenSqB = DirB.SizeSquared();
+				float tB = (LenSqB > KINDA_SMALL_NUMBER) ? FVector2D::DotProduct(IntP - SegB.P1, DirB) / LenSqB : 0.f;
+				
+				tA = FMath::Clamp(tA, 0.f, 1.f);
+				tB = FMath::Clamp(tB, 0.f, 1.f);
+				
+				bool bEntryA = FVector2D::DotProduct(DirA, SegB.OutsideNormal) < 0.f;
+				bool bEntryB = FVector2D::DotProduct(DirB, SegA.OutsideNormal) < 0.f;
+
+				int32 SideIdxA = WA.ConeIdx * 3 + WA.SideIdx;
+				OutSideIntersections[SideIdxA].Add({ IntP, tA, WA.SegIdx, bEntryA, true });
+
+				int32 SideIdxB = WB.ConeIdx * 3 + WB.SideIdx;
+				OutSideIntersections[SideIdxB].Add({ IntP, tB, WB.SegIdx, bEntryB, true });
+			}
+		}
+	}
+}
+
+void AOUtility::SortSideIntersections(TArray<TArray<FAOConeIntersection>>& SideIntersections)
+{
+	for (int32 i = 0; i < SideIntersections.Num(); ++i)
+	{
+		TArray<FAOConeIntersection>& List = SideIntersections[i];
+		if (List.Num() < 2) continue;
+
+		List.Sort([](const FAOConeIntersection& A, const FAOConeIntersection& B)
+		{
+			if (A.SegmentIndex != B.SegmentIndex)
+				return A.SegmentIndex < B.SegmentIndex;
+			
+			return A.t < B.t;
+		});
+	}
+}
+
+void AOUtility::ClassifySegments(
+	const FAOConesSoA& Cones,
+	const TArray<TArray<FAOConeIntersection>>& SideIntersections,
+	TArray<TArray<FAOSegment>>& OutOutsideSegments)
+{
+	OutOutsideSegments.SetNum(SideIntersections.Num());
+
+	for (int32 RayIdx = 0; RayIdx < SideIntersections.Num(); ++RayIdx)
+	{
+		OutOutsideSegments[RayIdx].Reset();
+		
+		const TArray<FAOConeIntersection>& List = SideIntersections[RayIdx];
+		if (List.Num() < 2) continue;
+
+		int32 ConeIdx = RayIdx / 3;
+		int32 SideType = RayIdx % 3;
+		
+		FVector2D FirstPoint = List[0].P;
+		int32 CountOfVOs = CountAOsForPoint(Cones, ConeIdx, FirstPoint);
+		
+		for (int32 j = 1; j < List.Num(); ++j)
+		{
+			const FAOConeIntersection& Prev = List[j - 1];
+			const FAOConeIntersection& Curr = List[j];
+
+			if (CountOfVOs == 0)
+			{
+				// TODO: Remove if?
+				if (Prev.SegmentIndex == Curr.SegmentIndex && 
+					FVector2D::DistSquared(Prev.P, Curr.P) > KINDA_SMALL_NUMBER)
+				{
+					FVector2D SegNormal = FVector2D::ZeroVector;
+					if (SideType == 0) SegNormal = Cones.LeftSide[ConeIdx].Segments[Prev.SegmentIndex].OutsideNormal;
+					else if (SideType == 1) SegNormal = Cones.RightSide[ConeIdx].Segments[Prev.SegmentIndex].OutsideNormal;
+					else SegNormal = Cones.TimeHorizonSegment[ConeIdx].OutsideNormal;
+
+					FAOSegment& NewSeg = OutOutsideSegments[RayIdx].Add_GetRef(FAOSegment());
+					NewSeg.Init(Prev.P, Curr.P, SegNormal);
+				}
+			}
+			
+			if (Curr.bIsIntersection)
+			{
+				if (Curr.bIsEntry)
+					CountOfVOs++;
+				else
+					CountOfVOs = FMath::Max(0, CountOfVOs - 1);
+			}
+		}
+	}
+}
+
+FVector2D AOUtility::SelectBestAccelerationFromOutsideSegments(
+    const FVector2D& DesiredAcc,
+    const FVector2D& CurAcc,
+    const TArray<FVONeighborView>& Neis,
+    const FVector& ActorPos,
+    const FVOParams& Params,
+    const FAOConesSoA& Cones,
+    const TArray<TArray<FAOSegment>>& OutsideSegmentsByRays,
+    TArray<FVector2D>& OutCandidates,
+    int32& OutBestIdx)
+{
+    OutCandidates.Reset();
+    OutBestIdx = -1;
+
+    float BestScore = -FLT_MAX;
+    FVector2D BestV = FVector2D::ZeroVector;
+    bool bFoundAny = false;
+
+    auto EvaluatePoint = [&](const FVector2D& P)
+    {
+        OutCandidates.Add(P); 
+        int32 CurrentIdx = OutCandidates.Num() - 1;
+
+        float Score = ScoreAccelerationCandidate(P, DesiredAcc, CurAcc, Neis, ActorPos, Params);
+
+        if (Score > BestScore)
+        {
+            BestScore = Score;
+            BestV = P;
+            OutBestIdx = CurrentIdx;
+            bFoundAny = true;
+        }
+    };
+
+    // Zero 
+    if (CountAOsForPoint(Cones, -1, FVector2D::ZeroVector) == 0)
+    {
+        EvaluatePoint(FVector2D::ZeroVector);
+    }
+
+    // Desired
+    if (CountAOsForPoint(Cones, -1, DesiredAcc) == 0)
+    {
+        EvaluatePoint(DesiredAcc);
+    }
+
+    for (const TArray<FAOSegment>& SegList : OutsideSegmentsByRays)
+    {
+        for (const FAOSegment& Seg : SegList)
+        {
+            // Ends
+            EvaluatePoint(Seg.P1);
+            EvaluatePoint(Seg.P2);
+
+            // Projection of desired acc
+            FVector2D SegDir = Seg.P2 - Seg.P1;
+            float SegLenSq = SegDir.SizeSquared();
+
+            if (SegLenSq > KINDA_SMALL_NUMBER)
+            {
+                float t = FVector2D::DotProduct(DesiredAcc - Seg.P1, SegDir) / SegLenSq;
+
+                if (t > 0.01f && t < 0.99f)
+                {
+                    FVector2D Projection = Seg.P1 + SegDir * t;
+                    EvaluatePoint(Projection);
+                }
+            }
+        }
+    }
+	
+    if (!bFoundAny)
+    {
+    	// TODO: Change fallback
+        FVector2D Fallback = FVector2D::ZeroVector; 
+        
+        EvaluatePoint(Fallback);
+        
+        return Fallback;
+    }
+
+    return BestV;
+}
+
+bool AOUtility::IsPointInsideAO(const FAOConesSoA& Cones, int32 ConeIdx, const FVector2D& P)
+{
+	const TArray<FAOTriangle>& Tris = Cones.Tris[ConeIdx];
+	for (const FAOTriangle& Tri : Tris)
+	{
+		if (IsPointInTriangle(P, Tri.P1, Tri.P2, Tri.P3))
+		{
+			return true;
+		}
+	}
+
+	const TArray<FAOQuad>& Quads = Cones.Quads[ConeIdx];
+	for (const FAOQuad& Quad : Quads)
+	{
+		// TODO: Check without triangulation
+		
+		// Tri 1: P1-P2-P3
+		if (IsPointInTriangle(P, Quad.P1, Quad.P2, Quad.P3))
+		{
+			return true;
+		}
+		// Tri 2: P1-P3-P4
+		if (IsPointInTriangle(P, Quad.P1, Quad.P3, Quad.P4))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool AOUtility::IsPointInsideAnyAO(const FAOConesSoA& Cones, const FVector2D& P, int32 IgnoreConeIdx)
+{
+	int32 Num = Cones.Num();
+	for (int32 i = 0; i < Num; ++i)
+	{
+		if (i == IgnoreConeIdx) continue;
+
+		if (IsPointInsideAO(Cones, i, P))
+			return true;
+	}
+	return false;
+}
+
+int32 AOUtility::CountAOsForPoint(const FAOConesSoA& Cones, int32 ConeIndexToSkip, const FVector2D& P)
+{
+	int32 Count = 0;
+	int32 Num = Cones.Num();
+	
+	for (int32 i = 0; i < Num; ++i)
+	{
+		if (i == ConeIndexToSkip) continue;
+
+		if (IsPointInsideAO(Cones, i, P))
+		{
+			Count++;
+		}
+	}
+	return Count;
+}
+
+bool AOUtility::IsPointInTriangle(const FVector2D& P, const FVector2D& A, const FVector2D& B, const FVector2D& C)
+{
+	auto Sign = [](const FVector2D& p1, const FVector2D& p2, const FVector2D& p3)
+	{
+		return (p1.X - p3.X) * (p2.Y - p3.Y) - (p2.X - p3.X) * (p1.Y - p3.Y);
+	};
+
+	float d1 = Sign(P, A, B);
+	float d2 = Sign(P, B, C);
+	float d3 = Sign(P, C, A);
+
+	bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+	bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+	return !(has_neg && has_pos);
+}
+
+float AOUtility::ScoreAccelerationCandidate(
+	const FVector2D& CandidateAcc,
+	const FVector2D& DesiredAcc,
+	const FVector2D& CurAcc,
+	const TArray<FVONeighborView>& Neis,
+	const FVector& ActorPos,
+	const FVOParams& Params)
+{
+	const float W_Proximity = 1.0f;  
+	const float W_Effort    = 0.05f; 
+	const float W_Smooth    = 0.02f;  
+
+	float DistDesSq = FVector2D::DistSquared(CandidateAcc, DesiredAcc);
+	float MagSq = CandidateAcc.SizeSquared();
+	float JerkSq = FVector2D::DistSquared(CandidateAcc, CurAcc);
+
+	return - (W_Proximity * DistDesSq) - (W_Effort * MagSq) - (W_Smooth * JerkSq);
+}
+
 void AOUtility::BuildAOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVector& ActorVel, const FVOParams& Params,
                              FAOConesSoA& OutVOCones)
 {
@@ -84,6 +506,7 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		t += t_interval;
 	}
 
+	// TODO: t_last;
 	t -= t_interval;
 	if (PointsL.Num() == 0)
 		return Cone;
@@ -120,11 +543,6 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		const FVector2D LastNormR = NormalsR.Last();
 		NormalsR.Add(LastNormR);
 	}
-
-	
-	
-	Cone.TimeHorizonNormal = TimeHorizonGrazeNormal;
-	Cone.TimeHorizonOffset = TimeHorizonC;
 
 
 	// Build convex points
@@ -282,6 +700,50 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		ZipSides(PointsR, PointsL, -1);
 	}
 
+	Cone.TimeHorizonSegment.Init(
+			TimeHorizonSegment.P1, 
+			TimeHorizonSegment.P2, 
+			TimeHorizonGrazeNormal
+		);
+        
+	if (FVector2D::DistSquared(TimeHorizonSegment.P1, TimeHorizonSegment.P2) < KINDA_SMALL_NUMBER)
+	{
+		Cone.isTHSegmentValid = false;
+	}
+
+	auto ConvertPointsToSegments = [](const TArray<FVector2D>& Points, FAOSide& OutSide, bool bIsLeft)
+	{
+		OutSide.Segments.Reset();
+		if (Points.Num() < 2) return;
+
+		for (int32 i = 0; i < Points.Num() - 1; ++i)
+		{
+			const FVector2D& P1 = Points[i];
+			const FVector2D& P2 = Points[i+1];
+
+			if (FVector2D::DistSquared(P1, P2) < KINDA_SMALL_NUMBER) // TODO: Check if it's needed'
+				continue;
+
+			FVector2D Dir = (P2 - P1).GetSafeNormal();
+            
+			FVector2D Normal = bIsLeft ? FVector2D(-Dir.Y, Dir.X) : FVector2D(Dir.Y, -Dir.X); //TODO: Maybe use old arrays
+
+			FAOSegment NewSeg;
+			NewSeg.Init(P1, P2, Normal);
+			OutSide.Segments.Add(NewSeg);
+		}
+	};
+
+	if (Cone.isLeftSideValid && PointsL.Num() > 1)
+	{
+		ConvertPointsToSegments(PointsL, Cone.LeftSide, true);
+	}
+
+	if (Cone.isRightSideValid && PointsR.Num() > 1)
+	{
+		ConvertPointsToSegments(PointsR, Cone.RightSide, false);
+	}
+
 	return Cone;
 }
 
@@ -290,7 +752,7 @@ bool AOUtility::FindLineAndSegmentIntersection(const FVector2D& LineNormal, cons
 	float& outT, FVector2D& outPoint)
 {
 	const float signedDistStart = FVector2D::DotProduct(LineNormal, SegmentP1) + LineC;	// s_THL1
-	const float signedDistEnd   = FVector2D::DotProduct(LineNormal, SegmentP2) + LineC;   // s_THL2
+	const float signedDistEnd   = FVector2D::DotProduct(LineNormal, SegmentP2) + LineC; // s_THL2
 
 	const float denom = signedDistStart - signedDistEnd;
 	if (FMath::IsNearlyZero(denom))
@@ -488,8 +950,7 @@ void AOUtility::DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA
 
 	for (int32 i = 0; i < Cones.Num(); ++i)
 	{
-		FColor Color = FColor::MakeRandomColor();
-
+		FColor Color = GetColorFromSeed(i);
 		const TArray<FAOTriangle>& ConeTris = Cones.Tris[i];
 		for (const FAOTriangle& Tri : ConeTris)
 		{
@@ -514,6 +975,27 @@ void AOUtility::DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA
 			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
 			DrawDebugLine(W, P + V3, P + V4, Color, true, 15.f, 0, 0.6f);
 			DrawDebugLine(W, P + V4, P + V1, Color, true, 15.f, 0, 0.6f);
+		}
+	}
+}
+
+void AOUtility::DrawAOOutsideSegments(const UVOFollowingComponent* Comp, const TArray<TArray<FAOSegment>>& OutsideSegments)
+{
+	UWorld* W = Comp->GetWorld();
+	if (!W) return;
+    
+	const FVector P = Comp->GetOwnerLocation();
+
+	for (int32 i = 0; i < OutsideSegments.Num(); ++i)
+	{
+		const TArray<FAOSegment>& SegList = OutsideSegments[i];
+		FColor Color = GetColorFromSeed(i / 3);
+		for (const FAOSegment& Seg : SegList)
+		{
+			FVector Start(Seg.P1.X, Seg.P1.Y, 0.f);
+			FVector End(Seg.P2.X, Seg.P2.Y, 0.f);
+            
+			DrawDebugLine(W, P + Start, P + End, Color, true, -1.f, 0, 3.0f);
 		}
 	}
 }

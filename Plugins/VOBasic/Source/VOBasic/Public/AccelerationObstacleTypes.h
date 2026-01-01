@@ -20,6 +20,29 @@ struct FAOSegment
 	FVector2D P1;
 	FVector2D P2;
 	FVector2D OutsideNormal;
+	
+	float MinX, MaxX;
+	float MinY, MaxY;
+
+	// TODO: Constructor
+	void Init(const FVector2D& InP1, const FVector2D& InP2, const FVector2D& InNormal)
+	{
+		P1 = InP1;
+		P2 = InP2;
+		OutsideNormal = InNormal;
+		
+		if (P1.X < P2.X) { MinX = P1.X; MaxX = P2.X; } else { MinX = P2.X; MaxX = P1.X; }
+		if (P1.Y < P2.Y) { MinY = P1.Y; MaxY = P2.Y; } else { MinY = P2.Y; MaxY = P1.Y; }
+	}
+};
+
+struct FAOWorkSegment
+{
+	int32 ConeIdx;
+	int32 SideIdx; 
+	int32 SegIdx;  
+	
+	const FAOSegment* SegmentRef; // TODO: Reference instead of pointer?
 };
 
 struct FAOSide
@@ -28,12 +51,11 @@ struct FAOSide
 };
 
 struct FAOCone
-{
-	FVector2D   TimeHorizonNormal;
-	float		TimeHorizonOffset;
-		
+{		
 	FAOSide		LeftSide;
 	FAOSide		RightSide;
+
+	FAOSegment  TimeHorizonSegment; 
 
 	bool		isLeftSideValid;
 	bool		isRightSideValid;
@@ -42,11 +64,9 @@ struct FAOCone
 	TArray<FAOTriangle> Tris;
 	TArray<FAOQuad>		Quads;
 };
-
 struct FAOConesSoA
 {
-	TArray<FVector2D>	TimeHorizonSegment;
-	TArray<FVector2D>	TimeHorizonNormal;
+	TArray<FAOSegment> TimeHorizonSegment;
 
 	TArray<FAOSide>		LeftSide;
 	TArray<FAOSide>		RightSide;
@@ -60,24 +80,31 @@ struct FAOConesSoA
 
 	void Reset()
 	{
-		//TimeHorizonSegment.Reset();
-		TimeHorizonNormal.Reset();
-
+		TimeHorizonSegment.Reset(); 
 		LeftSide.Reset();
 		RightSide.Reset();
-
 		isLeftSideValid.Reset();
 		isRightSideValid.Reset();
 		isTHSegmentValid.Reset();
-
 		Tris.Reset();
 		Quads.Reset();
 	}
 
+	void Add(const FAOCone& Cone)
+	{
+		TimeHorizonSegment.Add(Cone.TimeHorizonSegment); 
+		LeftSide.Add(Cone.LeftSide);
+		RightSide.Add(Cone.RightSide);
+		isLeftSideValid.Add(Cone.isLeftSideValid);
+		isRightSideValid.Add(Cone.isRightSideValid);
+		isTHSegmentValid.Add(Cone.isTHSegmentValid);
+		Tris.Add(Cone.Tris);
+		Quads.Add(Cone.Quads);
+	}
+
 	void Reserve(int32 Num)
 	{
-		//TimeHorizonSegment.Reserve(Num);
-		TimeHorizonNormal.Reserve(Num);
+		TimeHorizonSegment.Reserve(Num);
 
 		LeftSide.Reserve(Num);
 		RightSide.Reserve(Num);
@@ -90,28 +117,14 @@ struct FAOConesSoA
 		Quads.Reserve(Num);
 	}
 
-	void Add(const FAOCone& Cone)
-	{
-		//TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
-		TimeHorizonNormal.Add(Cone.TimeHorizonNormal);
-
-		LeftSide.Add(Cone.LeftSide);
-		RightSide.Add(Cone.RightSide);
-
-		isLeftSideValid.Add(Cone.isLeftSideValid);
-		isRightSideValid.Add(Cone.isRightSideValid);
-		isTHSegmentValid.Add(Cone.isTHSegmentValid);
-
-		Tris.Add(Cone.Tris);
-		Quads.Add(Cone.Quads);
-	}
-
 	int32 Num() const { return isLeftSideValid.Num(); }
 };
 
 struct FAOConeIntersection
 {
 	FVector2D P;
-	bool bIsFirst;
-	float t;
+	float t;          
+	int32 SegmentIndex; 
+	bool bIsEntry;
+	bool bIsIntersection;
 };

@@ -21,6 +21,14 @@ static TAutoConsoleVariable<int32> CVarCVODebugShow(
 	TEXT("Show VO cones (0/1). Per-component bDebugDraw also must be true."),
 	ECVF_Default);
 
+static TAutoConsoleVariable<int32> CVarAODebugShow(
+	TEXT("ao.Show"), 0,
+	TEXT("Show Acceleration Obstacle geometry (Tris/Quads)"), ECVF_Default);
+
+static TAutoConsoleVariable<int32> CVarAODebugShowOutside(
+	TEXT("cao.Show"), 0,
+	TEXT("Show valid AO boundary segments"), ECVF_Default);
+
 #define DEBUG_ON
 
 void UVOManager::OnNavDataRegistered(ANavigationData&){ }
@@ -39,102 +47,135 @@ void UVOManager::UnregisterAgent(UVOFollowingComponent* Comp)
 
 void UVOManager::Tick(float DeltaTime)
 {
-	/*for (int32 i = Agents.Num() - 1; i >= 0; --i)
-	{
-		auto* Comp = Agents[i].Get();
-		if (!Comp)
-		{
-			Agents.RemoveAtSwap(i);
-		}
-	}*/
+    for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+    {
+        UVOFollowingComponent* Comp = It.Get();
+        if (Comp) Comp->UpdateKinematics(DeltaTime);
+    }
+    
+    for (int32 i = Agents.Num() - 1; i >= 0; --i)
+    {
+        auto* Comp = Agents[i].Get();
+        if (!Comp) { Agents.RemoveAtSwap(i); continue; }
 
-	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
-	{
-		UVOFollowingComponent* Comp = It.Get();
-		if (!Comp /*|| Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle*/)
-			continue;
+        APawn* P = nullptr;
+        if (const AController* C = Cast<AController>(Comp->GetOwner()))
+            P = C->GetPawn();
+        if (!P) continue;
 
-		Comp->UpdateKinematics(DeltaTime);
-	}
-	
-	for (int32 i = Agents.Num() - 1; i >= 0; --i)
-	{
-		auto* Comp = Agents[i].Get();
-		if (!Comp) { Agents.RemoveAtSwap(i); continue; } //TODO: ???
+        const FVector Pos = Comp->GetOwnerLocation();
+        const FVector CurVel = Comp->GetOwnerVelocity();
+        const FVOParams& Params = Comp->GetEffectiveParams();
 
-		APawn* P = nullptr;
-		if (const AController* C = Cast<AController>(Comp->GetOwner()))
-			P = C->GetPawn();
-		if (!P) continue;
+        // Calculate Desired Velocity based on Goal
+        FVector DesiredVel = FVector::ZeroVector;
+        if (Comp->HasVOGoal())
+        {
+            const FVector To = (Comp->GetMoveGoal() - Pos);
+            const FVector2D To2D(To.X, To.Y);
+            const float Dist = To2D.Size();
+            if (Dist > 1.f)
+                DesiredVel = FVector(To2D / Dist * Params.MaxSpeed, 0.f);
+        }
 
-		const FVector Pos = Comp->GetOwnerLocation();
+    	if (Comp->HasVOGoal())
+    	{
+    		const FVector To = (Comp->GetMoveGoal() - Pos);
+    		const FVector2D To2D(To.X, To.Y);
+    		const float Dist = To2D.Size();
+    
+    		const float SlowDownRadius = 200.0f; 
+    		float TargetSpeed = Params.MaxSpeed;
+    
+    		if (Dist < SlowDownRadius)
+    		{
+    			TargetSpeed = Params.MaxSpeed * (Dist / SlowDownRadius);
+    		}
+    
+    		if (Dist > 1.f) // Deadzone
+    			DesiredVel = FVector(To2D / Dist * TargetSpeed, 0.f);
+    		else
+    			DesiredVel = FVector::ZeroVector;
+    	}
 
-		FVector DesiredVel = FVector::ZeroVector;
-		if (Comp->HasVOGoal())
-		{
-			const FVector To = (Comp->GetMoveGoal() - Pos);
-			const FVector2D To2D(To.X, To.Y);
-			const float Dist = To2D.Size();
-			if (Dist > 1.f)
-				DesiredVel = FVector(To2D / Dist * Comp->GetEffectiveParams().MaxSpeed, 0.f);
-		}
+        // Collect Neighbors
+        TArray<FVONeighborView> Neis;
+        const float Range = Params.NeighborRange;
+        const float R2 = Range * Range;
+        for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+        {
+            UVOFollowingComponent* Other = It.Get();
+            if (!Other || Other == Comp) continue;
+            if (FVector::DistSquared2D(Pos, Other->GetOwnerLocation()) > R2) continue;
 
-		const FVector CurVel = Comp->GetOwnerVelocity();					//TODO: Change to cached
+            FVONeighborView V;
+            V.Pos = Other->GetOwnerLocation();
+            V.Vel = Other->GetOwnerVelocity();
+           
+            V.Acc = (Other->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle) ? Other->GetCachedAcceleration() : FVector::ZeroVector;
+            V.Radius = Other->GetAgentRadius();
+            Neis.Add(V);
+        }
 
-		TArray<FVONeighborView> Neis;
-		const float Range = Comp->GetEffectiveParams().NeighborRange;
-		const float R2 = Range * Range;
-		for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
-		{
-			UVOFollowingComponent* Other = It.Get();
-			if (!Other || Other == Comp) continue;
-			const FVector OP = Other->GetOwnerLocation();
-			if (FVector::DistSquared2D(Pos, OP) > R2) continue;
+        // Prepare Buffers
+        PrepareArrays(Neis.Num());
 
-			FVONeighborView V;
-			V.Pos = OP;
-			V.Vel = Other->GetOwnerVelocity();								//TODO: Change to cached
-			V.Acc = Comp->GetAvoidanceStyle() != EAvoidanceStyle::AccelerationObstacle ? Other->GetCachedAcceleration() : FVector::ZeroVector; // TODO: Think
-			V.Radius = Other->GetAgentRadius();
-			Neis.Add(V);
-		}
+        // ACCELERATION OBSTACLE
+        if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
+        {
+            FVector BestAccel = AOUtility::ComputeBestAcceleration(
+                Comp, CurVel, DesiredVel, Neis, Params,
+                AO_Cones,				// In/Out Buffer
+                AO_WorkSegments,			// In/Out Buffer
+                AO_SideIntersections,	// In/Out Buffer
+                AO_OutsideSegments,		// In/Out Buffer (Valid Segments)
+                AO_Candidates,			// Debug Buffer
+                AO_BestCandidateIdx		// Debug Index
+            );
 
-		PrepareArrays(Neis.Num());
-		const FVOParams& Params = Comp->GetEffectiveParams();				// TODO: Move to start of tick?
+            // Apply Acceleration to Movement Component
+            if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
+            {
+                Move->AddInputVector(BestAccel);
+            }
 
-		// AO Visual Debug
-		if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
-		{
-			if (Comp->HasVOGoal())
-			{
-				const FVector GoalDir = (Comp->GetMoveGoal() - Pos).GetSafeNormal();
-				FVector DesiredAcc = GoalDir * Params.MaxAcceleration;
-				FAOConesSoA TestAOCones;
-				
-				AOUtility::BuildAOCones(Neis, Pos, CurVel, Params, TestAOCones);
+            // DEBUG DRAW AO
+#ifdef DEBUG_ON
+            if (Comp->bDebugDraw)
+            {
+                FlushPersistentDebugLines(Comp->GetWorld());
+            	
+                // ao.Show
+                if (CVarAODebugShow.GetValueOnAnyThread() != 0)
+                {
+                    AOUtility::DrawAOCones(Comp, AO_Cones);
+                }
 
-				FlushPersistentDebugLines(Comp->GetWorld());
-			
-				AOUtility::DrawAOCones(Comp, TestAOCones);
+                // cao.Show
+                if (CVarAODebugShowOutside.GetValueOnAnyThread() != 0)
+                {
+                    AOUtility::DrawAOOutsideSegments(Comp, AO_OutsideSegments);
+                }
 
-				if (!DesiredAcc.IsZero())
-				{
-					DrawDebugLine(Comp->GetWorld(), Pos, Pos + DesiredAcc, FColor::Green, false, -1.f, 0, 2.0f);
-				}
-			}
+                if (CVarAODebugShow.GetValueOnAnyThread() != 0 || CVarAODebugShowOutside.GetValueOnAnyThread() != 0)
+                {
+                    VOUtility::DrawVelocityCandidates(Comp, AO_Candidates, AO_BestCandidateIdx, 8.f, 0.f);
+                    
+                    DrawDebugLine(Comp->GetWorld(), Pos, Pos + CurVel, FColor::Blue, true, -1.f, 0, 2.f); // Vel
+                    DrawDebugLine(Comp->GetWorld(), Pos, Pos + BestAccel, FColor::Green, true, -1.f, 0, 3.f); // Accel
+                }
+            }
+#endif
+            continue; // AO Done
+        }
 
-			DrawDebugLine(Comp->GetWorld(), Pos, Pos + CurVel, FColor::Blue, false, -1.f, 0, 1.5f);
-
-			return;
-		}
-		
-		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
-
-		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
-		{
-			Move->RequestDirectMove(OutVel, false);
-		}
-	}
+        // VELOCITY OBSTACLE 
+        const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
+        if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
+        {
+            Move->RequestDirectMove(OutVel, false);
+        }
+    }
 }
 
 FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params)
@@ -205,5 +246,16 @@ void UVOManager::PrepareArrays(size_t NumNeis)
 	{
 		OutsideSegmentsByRays[i].Reset();
 		OutsideSegmentsByRays[i].Reserve(FMath::Max(0, IntersectionsByRays[i].Num()));
+	}
+
+	if (AO_WorkSegments.Max() < (int32)NumRays * 5) 
+	{
+		AO_WorkSegments.Reserve(NumRays * 5);
+	}
+    
+	if (AO_SideIntersections.Num() < (int32)NumRays)
+	{
+		AO_SideIntersections.SetNum(NumRays);
+		AO_OutsideSegments.SetNum(NumRays);
 	}
 }

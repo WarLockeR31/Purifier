@@ -34,9 +34,18 @@ public:
 private:
 	TArray<TWeakObjectPtr<UVOFollowingComponent>> Agents;
 
+	// VO Buffers
 	FVOConesSoA VO_Cones;
 	TArray<TArray<FVOConeIntersection>> IntersectionsByRays;
 	TArray<TArray<FVOOutsideSegment>>	OutsideSegmentsByRays;
+
+	// AO Buffers
+	FAOConesSoA AO_Cones;
+	TArray<FAOWorkSegment> AO_WorkSegments;
+	TArray<TArray<FAOConeIntersection>> AO_SideIntersections;
+	TArray<TArray<FAOSegment>> AO_OutsideSegments;
+	TArray<FVector2D> AO_Candidates;
+	int32 AO_BestCandidateIdx;
 	
 	FVector ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params);
 

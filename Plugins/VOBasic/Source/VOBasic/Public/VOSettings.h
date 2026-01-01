@@ -43,7 +43,7 @@ public:
 	float NDiscreteIntervals = 10;
 
 	UPROPERTY(EditAnywhere, Config, Category="AO")
-	float MinimalReactionTime = 0.01f;
+	float MinimalReactionTime = 0.1f;
 
 	/** Collect names of presets (for BP/Editor). */
 	UFUNCTION(BlueprintCallable, Category="VO|Settings")
