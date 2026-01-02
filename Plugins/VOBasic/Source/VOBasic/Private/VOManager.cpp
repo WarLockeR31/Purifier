@@ -64,39 +64,8 @@ void UVOManager::Tick(float DeltaTime)
         if (!P) continue;
 
         const FVector Pos = Comp->GetOwnerLocation();
-        const FVector CurVel = Comp->GetOwnerVelocity();
+        const FVector CurVel = Comp->GetCachedVelocity();
         const FVOParams& Params = Comp->GetEffectiveParams();
-
-        // Calculate Desired Velocity based on Goal
-        FVector DesiredVel = FVector::ZeroVector;
-        if (Comp->HasVOGoal())
-        {
-            const FVector To = (Comp->GetMoveGoal() - Pos);
-            const FVector2D To2D(To.X, To.Y);
-            const float Dist = To2D.Size();
-            if (Dist > 1.f)
-                DesiredVel = FVector(To2D / Dist * Params.MaxSpeed, 0.f);
-        }
-
-    	if (Comp->HasVOGoal())
-    	{
-    		const FVector To = (Comp->GetMoveGoal() - Pos);
-    		const FVector2D To2D(To.X, To.Y);
-    		const float Dist = To2D.Size();
-    
-    		const float SlowDownRadius = 200.0f; 
-    		float TargetSpeed = Params.MaxSpeed;
-    
-    		if (Dist < SlowDownRadius)
-    		{
-    			TargetSpeed = Params.MaxSpeed * (Dist / SlowDownRadius);
-    		}
-    
-    		if (Dist > 1.f) // Deadzone
-    			DesiredVel = FVector(To2D / Dist * TargetSpeed, 0.f);
-    		else
-    			DesiredVel = FVector::ZeroVector;
-    	}
 
         // Collect Neighbors
         TArray<FVONeighborView> Neis;
@@ -110,7 +79,7 @@ void UVOManager::Tick(float DeltaTime)
 
             FVONeighborView V;
             V.Pos = Other->GetOwnerLocation();
-            V.Vel = Other->GetOwnerVelocity();
+            V.Vel = Other->GetCachedVelocity();
            
             V.Acc = (Other->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle) ? Other->GetCachedAcceleration() : FVector::ZeroVector;
             V.Radius = Other->GetAgentRadius();
@@ -120,11 +89,34 @@ void UVOManager::Tick(float DeltaTime)
         // Prepare Buffers
         PrepareArrays(Neis.Num());
 
+    	// VELOCITY OBSTACLE
+    	if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::VelocityObstacle)
+    	{
+    		// Calculate Desired Velocity based on Goal
+    		FVector DesiredVel = FVector::ZeroVector;
+    		if (Comp->HasVOGoal())
+    		{
+    			const FVector To = (Comp->GetMoveGoal() - Pos);
+    			const FVector2D To2D(To.X, To.Y);
+    			const float Dist = To2D.Size();
+    			if (Dist > 1.f)
+    				DesiredVel = FVector(To2D / Dist * Params.MaxSpeed, 0.f);
+    		}
+    		
+    		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
+    		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
+    		{
+    			Move->RequestDirectMove(OutVel, false);
+    		}
+    		continue;
+    	}
+
         // ACCELERATION OBSTACLE
         if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
         {
+        	FVector TargetPos = Comp->GetMoveGoal();
             FVector BestAccel = AOUtility::ComputeBestAcceleration(
-                Comp, CurVel, DesiredVel, Neis, Params,
+                Comp, CurVel, TargetPos, Neis, Params,
                 AO_Cones,				// In/Out Buffer
                 AO_WorkSegments,			// In/Out Buffer
                 AO_SideIntersections,	// In/Out Buffer
@@ -167,13 +159,6 @@ void UVOManager::Tick(float DeltaTime)
             }
 #endif
             continue; // AO Done
-        }
-
-        // VELOCITY OBSTACLE 
-        const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
-        if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
-        {
-            Move->RequestDirectMove(OutVel, false);
         }
     }
 }

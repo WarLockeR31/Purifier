@@ -5,7 +5,7 @@
 FVector AOUtility::ComputeBestAcceleration(
 	const UVOFollowingComponent* Comp,
 	const FVector& CurVel,
-	const FVector& DesiredVel,
+	const FVector& TargetPos,
 	const TArray<FVONeighborView>& Neis,
 	const FVOParams& Params,
 	FAOConesSoA& AOCones,
@@ -31,29 +31,49 @@ FVector AOUtility::ComputeBestAcceleration(
 	CollectIntersections(WorkSegments, SideIntersections);
 	SortSideIntersections(SideIntersections);
 	ClassifySegments(AOCones, SideIntersections, OutsideSegments);
-
-	// TODO: Desired acc calculation
+	
 	FVector2D DesiredAcc2D = FVector2D::ZeroVector;
-	if (!DesiredVel.IsZero())
+	FVector2D TargetPosRel = FVector2D(TargetPos - ActorPos); // For parabola
+	if (!TargetPosRel.IsZero())
 	{
-		FVector2D DV(DesiredVel.X, DesiredVel.Y);
-		FVector2D CV(CurVel.X, CurVel.Y);
-		
-		FVector2D Diff = (DV - CV); 
-		Diff *= 4.0f; 
+		FVector2D VelRel = FVector2D(CurVel);  // For parabola
+		FVector2D TargetAcc = FVector2D::Zero(); // For parabola
+		double MaxAcc = Params.MaxAcceleration; // For circle 1
+		// CurVel for circle 2
 
-		if (Diff.SizeSquared() > Params.MaxAcceleration * Params.MaxAcceleration)
+		FAOParabola Parabola;
+		Parabola.A = TargetPosRel * 2.0;
+		Parabola.B = VelRel * -2.0;
+		Parabola.C = TargetAcc;
+
+		// Формируем Круг 1: Ограничение модуля ускорения
+		FAOCircle C1;
+		C1.Center = FVector2D::ZeroVector;
+		C1.R = Params.MaxAcceleration;
+		C1.RSq = C1.R * C1.R;
+
+		// Формируем Круг 2: Кинематическое ограничение
+		// Условие: (Acc + V0/ta)^2 <= (Vmax/ta)^2
+		// Center = -V0 / ta
+		// Radius = Vmax / ta
+		double Ta = /*FMath::Max(Params.TauHorizon, 0.01f)*/1.5f;
+		FAOCircle C2;
+		C2.Center = FVector2D(CurVel) * (-1.0 / Ta);
+		C2.R = Params.MaxSpeed / Ta;
+		C2.RSq = C2.R * C2.R;
+
+		FParabolaResult Result = FindParabolaIntersection(Parabola, C1, C2, 16);
+		UE_LOG(LogTemp, Display, TEXT("U: %f"), Result.U);
+
+		if (Result.bFound)
 		{
-			DesiredAcc2D = Diff.GetSafeNormal() * Params.MaxAcceleration;
-		}
-		else
-		{
-			DesiredAcc2D = Diff;
+			DesiredAcc2D = Result.Point;
+			UE_LOG(LogTemp, Display, TEXT("AHHAHA X: %f, Y: %f"), DesiredAcc2D.X, DesiredAcc2D.Y);
 		}
 	}
 
-	// TODO: Cur Acceleration
-	FVector2D CurAcc2D(0.f, 0.f); 
+	FVector2D CurAcc2D = FVector2D(Comp->GetCachedAcceleration());
+	UE_LOG(LogTemp, Display, TEXT("UUUSAAS X: %f, Y: %f"), CurAcc2D.X, CurAcc2D.Y);
 	
 	FVector2D Best = SelectBestAccelerationFromOutsideSegments(
 		DesiredAcc2D,
@@ -66,6 +86,7 @@ FVector AOUtility::ComputeBestAcceleration(
 		Candidates,
 		BestCandidateIdx
 	);
+	UE_LOG(LogTemp, Display, TEXT("X: %f, Y: %f"), Best.X, Best.Y);
 
 	return FVector(Best.X, Best.Y, 0.f);
 }
@@ -73,7 +94,7 @@ FVector AOUtility::ComputeBestAcceleration(
 void AOUtility::PrepareAndSortWorkSegments(const FAOConesSoA& InCones, TArray<FAOWorkSegment>& OutWorkSegments, int32& OutTotalSides)
 {
 	OutWorkSegments.Reset();
-	OutTotalSides = InCones.Num() * 3; // L, R, TH
+	OutTotalSides = InCones.Num() * 4; // L, R, TH, MinTime
 
 	for (int32 i = 0; i < InCones.Num(); ++i)
 	{
@@ -111,6 +132,16 @@ void AOUtility::PrepareAndSortWorkSegments(const FAOConesSoA& InCones, TArray<FA
 			WS.SegIdx = 0;  
 			WS.SegmentRef = &InCones.TimeHorizonSegment[i];
 		}
+
+		// Min Time Segment (SideIdx = 3)
+		if (InCones.isMinTimeSegmentValid[i])
+		{
+			FAOWorkSegment& WS = OutWorkSegments.Add_GetRef(FAOWorkSegment());
+			WS.ConeIdx = i;
+			WS.SideIdx = 3; 
+			WS.SegIdx = 0;
+			WS.SegmentRef = &InCones.MinTimeSegment[i];
+		}
 	}
 
 	// Sort by MinX
@@ -126,7 +157,7 @@ void AOUtility::CollectIntersections(const TArray<FAOWorkSegment>& WorkSegments,
 	for (int32 i = 0; i < NumWork; ++i)
 	{
 		const FAOWorkSegment& W = WorkSegments[i];
-		int32 FlatSideIdx = W.ConeIdx * 3 + W.SideIdx;
+		int32 FlatSideIdx = W.ConeIdx * 4 + W.SideIdx;
 		
 		OutSideIntersections[FlatSideIdx].Add({ W.SegmentRef->P1, 0.f, W.SegIdx, false, false });
 		OutSideIntersections[FlatSideIdx].Add({ W.SegmentRef->P2, 1.f, W.SegIdx, false, false });
@@ -164,10 +195,10 @@ void AOUtility::CollectIntersections(const TArray<FAOWorkSegment>& WorkSegments,
 				bool bEntryA = FVector2D::DotProduct(DirA, SegB.OutsideNormal) < 0.f;
 				bool bEntryB = FVector2D::DotProduct(DirB, SegA.OutsideNormal) < 0.f;
 
-				int32 SideIdxA = WA.ConeIdx * 3 + WA.SideIdx;
+				int32 SideIdxA = WA.ConeIdx * 4 + WA.SideIdx;
 				OutSideIntersections[SideIdxA].Add({ IntP, tA, WA.SegIdx, bEntryA, true });
 
-				int32 SideIdxB = WB.ConeIdx * 3 + WB.SideIdx;
+				int32 SideIdxB = WB.ConeIdx * 4 + WB.SideIdx;
 				OutSideIntersections[SideIdxB].Add({ IntP, tB, WB.SegIdx, bEntryB, true });
 			}
 		}
@@ -205,8 +236,8 @@ void AOUtility::ClassifySegments(
 		const TArray<FAOConeIntersection>& List = SideIntersections[RayIdx];
 		if (List.Num() < 2) continue;
 
-		int32 ConeIdx = RayIdx / 3;
-		int32 SideType = RayIdx % 3;
+		int32 ConeIdx = RayIdx / 4;
+		int32 SideType = RayIdx % 4;
 		
 		FVector2D FirstPoint = List[0].P;
 		int32 CountOfVOs = CountAOsForPoint(Cones, ConeIdx, FirstPoint);
@@ -223,9 +254,10 @@ void AOUtility::ClassifySegments(
 					FVector2D::DistSquared(Prev.P, Curr.P) > KINDA_SMALL_NUMBER)
 				{
 					FVector2D SegNormal = FVector2D::ZeroVector;
-					if (SideType == 0) SegNormal = Cones.LeftSide[ConeIdx].Segments[Prev.SegmentIndex].OutsideNormal;
+					if		(SideType == 0)	SegNormal = Cones.LeftSide[ConeIdx].Segments[Prev.SegmentIndex].OutsideNormal;
 					else if (SideType == 1) SegNormal = Cones.RightSide[ConeIdx].Segments[Prev.SegmentIndex].OutsideNormal;
-					else SegNormal = Cones.TimeHorizonSegment[ConeIdx].OutsideNormal;
+					else if (SideType == 2) SegNormal = Cones.TimeHorizonSegment[ConeIdx].OutsideNormal;
+					else if (SideType == 3) SegNormal = Cones.MinTimeSegment[ConeIdx].OutsideNormal;
 
 					FAOSegment& NewSeg = OutOutsideSegments[RayIdx].Add_GetRef(FAOSegment());
 					NewSeg.Init(Prev.P, Curr.P, SegNormal);
@@ -241,6 +273,196 @@ void AOUtility::ClassifySegments(
 			}
 		}
 	}
+}
+
+int32 AOUtility::SolveQuadratic(double A, double B, double C, double& OutX1, double& OutX2)
+{
+	if (FMath::IsNearlyZero(A, 1e-9))
+	{
+		if (FMath::IsNearlyZero(B, 1e-9)) return 0;
+		OutX1 = -C / B;
+		return 1;
+	}
+
+	double D = B * B - 4.0 * A * C;
+	if (D < 0.0) return 0;
+
+	double SqrtD = FMath::Sqrt(D);
+	double Inv2A = 0.5 / A;
+	OutX1 = (-B - SqrtD) * Inv2A;
+	OutX2 = (-B + SqrtD) * Inv2A;
+	return 2;
+}
+
+bool AOUtility::FindCircleCircleIntersections(const FAOCircle& C1, const FAOCircle& C2, FVector2D& OutP1, FVector2D& OutP2)
+{
+	FVector2D DVec = C2.Center - C1.Center;
+	double DistSq = DVec.SizeSquared();
+	double Dist = FMath::Sqrt(DistSq);
+
+	// TODO: Optimize
+	if (Dist > C1.R + C2.R || Dist < FMath::Abs(C1.R - C2.R) || Dist < 1e-9)
+		return false;
+
+	double A = (C1.RSq - C2.RSq + DistSq) / (2.0 * Dist);
+	double H = FMath::Sqrt(FMath::Max(0.0, C1.RSq - A * A));
+
+	double X2 = C1.Center.X + A * (C2.Center.X - C1.Center.X) / Dist;
+	double Y2 = C1.Center.Y + A * (C2.Center.Y - C1.Center.Y) / Dist;
+
+	double DX = H * (C2.Center.Y - C1.Center.Y) / Dist;
+	double DY = H * (C2.Center.X - C1.Center.X) / Dist;
+
+	OutP1 = FVector2D(X2 + DX, Y2 - DY);
+	OutP2 = FVector2D(X2 - DX, Y2 + DY);
+	return true;
+}
+
+FParabolaResult AOUtility::FindParabolaIntersection(const FAOParabola& Curve, const FAOCircle& C1, const FAOCircle& C2, int32 DiscSegments)
+{
+	FParabolaResult Result;
+	Result.U = -1.0;
+
+	// Расстояние между центрами
+	double DistSq = FVector2D::DistSquared(C1.Center, C2.Center);
+	double Dist = FMath::Sqrt(DistSq);
+
+	// 1. Проверка на непересечение (Disjoint)
+	// Если круги слишком далеко друг от друга, пересечения нет.
+	if (Dist > C1.R + C2.R + KINDA_SMALL_NUMBER)
+	{
+		return Result; // bFound = false
+	}
+
+	// Лямбда для обработки дуги (или полного круга)
+	// Если bFullCircle == true, Segments удваивается, и ConstraintC игнорируется
+	auto ProcessArc = [&](const FAOCircle& TargetC, const FAOCircle& ConstraintC, 
+		const FVector2D& PStart, const FVector2D& PEnd, 
+		bool bFullCircle, int32 SegmentsCount)
+	{
+		double TotalAngle;
+		FVector2D VStart;
+
+		if (bFullCircle)
+		{
+			TotalAngle = 2.0 * PI;
+			VStart = FVector2D(TargetC.R, 0.0); // Начинаем с "востока"
+		}
+		else
+		{
+			VStart = PStart - TargetC.Center;
+			double Ang1 = FMath::Atan2(VStart.Y, VStart.X);
+			double Ang2 = FMath::Atan2(PEnd.Y - TargetC.Center.Y, PEnd.X - TargetC.Center.X);
+
+			TotalAngle = Ang2 - Ang1;
+			if (TotalAngle <= -PI) TotalAngle += 2.0 * PI;
+			else if (TotalAngle > PI) TotalAngle -= 2.0 * PI;
+
+			// Проверка направления (берем середину дуги)
+			double MidAngle = Ang1 + TotalAngle * 0.5;
+			FVector2D MidPt = FVector2D(
+				TargetC.Center.X + TargetC.R * FMath::Cos(MidAngle),
+				TargetC.Center.Y + TargetC.R * FMath::Sin(MidAngle)
+			);
+
+			// Если середина дуги снаружи ограничивающего круга, инвертируем дугу
+			if ((MidPt - ConstraintC.Center).SizeSquared() > ConstraintC.RSq)
+			{
+				TotalAngle = (TotalAngle > 0.0) ? TotalAngle - 2.0 * PI : TotalAngle + 2.0 * PI;
+			}
+		}
+
+		double Step = TotalAngle / (double)SegmentsCount;
+		double SinStep, CosStep;
+		FMath::SinCos(&SinStep, &CosStep, Step);
+
+		// Precompute squared segment length
+		double SegLenSq = 2.0 * TargetC.RSq * (1.0 - CosStep);
+
+		FVector2D CurrOffset = VStart;
+		FVector2D PrevP = bFullCircle ? (TargetC.Center + VStart) : PStart;
+
+		for (int32 i = 0; i < SegmentsCount; ++i)
+		{
+			// Vector Rotation
+			double NextX = CurrOffset.X * CosStep - CurrOffset.Y * SinStep;
+			double NextY = CurrOffset.X * SinStep + CurrOffset.Y * CosStep;
+
+			CurrOffset = FVector2D(NextX, NextY);
+			FVector2D CurrP = TargetC.Center + CurrOffset;
+
+			FVector2D SegDir = CurrP - PrevP;
+			FVector2D Normal(-SegDir.Y, SegDir.X);
+			double C_Line = -(Normal | PrevP);
+
+			double QA = Normal | Curve.A;
+			double QB = Normal | Curve.B;
+			double QC = (Normal | Curve.C) + C_Line;
+
+			double U1, U2;
+			int32 Roots = SolveQuadratic(QA, QB, QC, U1, U2);
+
+			if (Roots > 0)
+			{
+				auto CheckPoint = [&](double U)
+				{
+					if (U > Result.U)
+					{
+						FVector2D P = Curve.Eval(U);
+
+						// Если полный круг, проверка на Constraint не нужна (мы и так внутри)
+						// Если дуга, проверяем попадание во второй круг
+						bool bInConstraint = bFullCircle || ((P - ConstraintC.Center).SizeSquared() <= ConstraintC.RSq + 0.1);
+						
+						if (bInConstraint)
+						{
+							double Proj = (P - PrevP) | SegDir;
+							if (Proj >= -1e-2 && Proj <= SegLenSq + 1e-2)
+							{
+								Result.U = U;
+								Result.Point = P;
+								Result.bFound = true;
+							}
+						}
+					}
+				};
+
+				CheckPoint(U1);
+				if (Roots > 1) CheckPoint(U2);
+			}
+
+			PrevP = CurrP;
+		}
+	};
+
+	// 2. Проверка на вложенность (Nested)
+	bool bC2inC1 = Dist + C2.R <= C1.R + KINDA_SMALL_NUMBER;
+	bool bC1inC2 = Dist + C1.R <= C2.R + KINDA_SMALL_NUMBER;
+
+	if (bC2inC1)
+	{
+		// C2 внутри C1 -> Зона пересечения равна C2. Ищем пересечение с C2.
+		// Удваиваем сегменты для точности.
+		ProcessArc(C2, C1, FVector2D::ZeroVector, FVector2D::ZeroVector, true, DiscSegments * 2);
+		return Result;
+	}
+	
+	if (bC1inC2)
+	{
+		// C1 внутри C2 -> Зона пересечения равна C1. Ищем пересечение с C1.
+		ProcessArc(C1, C2, FVector2D::ZeroVector, FVector2D::ZeroVector, true, DiscSegments * 2);
+		return Result;
+	}
+
+	// 3. Обычное пересечение (Lens)
+	FVector2D Int1, Int2;
+	if (FindCircleCircleIntersections(C1, C2, Int1, Int2))
+	{
+		ProcessArc(C1, C2, Int1, Int2, false, DiscSegments);
+		ProcessArc(C2, C1, Int1, Int2, false, DiscSegments);
+	}
+
+	return Result;
 }
 
 FVector2D AOUtility::SelectBestAccelerationFromOutsideSegments(
@@ -289,6 +511,12 @@ FVector2D AOUtility::SelectBestAccelerationFromOutsideSegments(
         EvaluatePoint(DesiredAcc);
     }
 
+	// Desired
+	if (CountAOsForPoint(Cones, -1, CurAcc) == 0)
+	{
+		EvaluatePoint(CurAcc);
+	}
+
     for (const TArray<FAOSegment>& SegList : OutsideSegmentsByRays)
     {
         for (const FAOSegment& Seg : SegList)
@@ -317,7 +545,8 @@ FVector2D AOUtility::SelectBestAccelerationFromOutsideSegments(
     if (!bFoundAny)
     {
     	// TODO: Change fallback
-        FVector2D Fallback = FVector2D::ZeroVector; 
+        FVector2D Fallback = FVector2D::ZeroVector;
+    	UE_LOG(LogTemp, Warning, TEXT("No acceleration candidates found! Using fallback: %s"), *Fallback.ToString());
         
         EvaluatePoint(Fallback);
         
@@ -415,7 +644,7 @@ float AOUtility::ScoreAccelerationCandidate(
 {
 	const float W_Proximity = 1.0f;  
 	const float W_Effort    = 0.05f; 
-	const float W_Smooth    = 0.02f;  
+	const float W_Smooth    = 0.9f;  
 
 	float DistDesSq = FVector2D::DistSquared(CandidateAcc, DesiredAcc);
 	float MagSq = CandidateAcc.SizeSquared();
@@ -485,12 +714,12 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		// Check if convex
 		if (i == 0)
 		{
-			FString Msg = FString::Printf(TEXT("L: %.2f | R: %.2f"), GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X, GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X);
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
+			//FString Msg = FString::Printf(TEXT("L: %.2f | R: %.2f"), GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X, GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X);
+			//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
 			
-			if (GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X >= 0.f)
+			if (GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X > 0.f)
 				isConvexL = true;
-			if (GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X <= 0.f)
+			if (GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X < 0.f)
 				isConvexR = true;
 
 			/*Msg = FString::Printf(TEXT("X: %.2f | Y: %.2f"), GrazeSourceP.X, GrazeSourceP.Y);
@@ -505,6 +734,51 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		
 		t += t_interval;
 	}
+
+#pragma region MinReactionTime Segment
+	if (PointsL.Num() > 0 && PointsR.Num() > 0)
+    {
+        FVector2D P_L_Start = PointsL[0];
+        FVector2D P_R_Start = PointsR[0];
+
+        FVector2D Dir = P_R_Start - P_L_Start;
+        
+        FVector2D SegNormal;
+        if (Dir.SizeSquared() > KINDA_SMALL_NUMBER)
+        {
+            FVector2D DirNorm = Dir.GetSafeNormal();
+            
+            
+            FVector2D TempNormal = FVector2D(DirNorm.Y, -DirNorm.X); // Вправо от вектора L->R
+            
+            // Проверяем направление относительно вектора "развития" конуса (P[1] - P[0])
+            FVector2D ExpansionDir = (PointsL.Num() > 1) ? (PointsL[1] - PointsL[0]) : Vel;
+            
+            if (FVector2D::DotProduct(TempNormal, ExpansionDir) > 0)
+            {
+                // Если нормаль смотрит туда же, куда растет конус -> инвертируем
+                SegNormal = -TempNormal;
+            	UE_LOG(LogTemp, Warning, TEXT("Inverted normal!"));
+            }
+            else
+            {
+                SegNormal = TempNormal;
+            }
+        }
+        else
+        {
+            SegNormal = -Vel.GetSafeNormal(); 
+        }
+
+        Cone.MinTimeSegment.Init(P_L_Start, P_R_Start, SegNormal);
+        
+        Cone.isMinTimeSegmentValid = (FVector2D::DistSquared(P_L_Start, P_R_Start) > KINDA_SMALL_NUMBER);
+    }
+    else
+    {
+        Cone.isMinTimeSegmentValid = false;
+    }
+#pragma endregion 
 
 	// TODO: t_last;
 	t -= t_interval;
@@ -538,11 +812,17 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		const FVector2D LastNormL = NormalsL.Last();
 		NormalsL.Add(LastNormL);
 
+		FString Msg = FString::Printf(TEXT("THL: X: %.2f | Y: %.2f"), TimeHorizonL.X, TimeHorizonL.Y);
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
+
 		TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
 		PointsR.Add(TimeHorizonR);
 		const FVector2D LastNormR = NormalsR.Last();
 		NormalsR.Add(LastNormR);
 	}
+
+	FString Msg = FString::Printf(TEXT("BCR: %d"), PointsR.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
 
 
 	// Build convex points
@@ -550,6 +830,9 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 		PointsL = BuildConvexSide(PointsL, NormalsL);
 	if (isConvexR)
 		PointsR = BuildConvexSide(PointsR, NormalsR);
+
+	Msg = FString::Printf(TEXT("R: %d"), PointsR.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
 
 	/*FString Msg = FString::Printf(TEXT("PL: %d | NL: %d | LR: %d | NR: %d"), PointsL.Num(), NormalsL.Num(), PointsR.Num(), NormalsR.Num());
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, Msg);*/
@@ -617,6 +900,9 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 			ProcessSideIntersections(PointsR, NormalsR, false);
 		}
 	}
+
+	Msg = FString::Printf(TEXT("RN: %d"), PointsR.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
 	
 	// Dumb validation
 	// TODO: Replace with VO-like validation
@@ -699,6 +985,9 @@ FAOCone AOUtility::ComputeAOCone(const float R, const FVector2D& C, const FVecto
 	{
 		ZipSides(PointsR, PointsL, -1);
 	}
+
+	Msg = FString::Printf(TEXT("CQ: %d"), Cone.Quads.Num());
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, Msg);
 
 	Cone.TimeHorizonSegment.Init(
 			TimeHorizonSegment.P1, 
@@ -957,6 +1246,9 @@ void AOUtility::DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA
 			FVector V1(Tri.P1.X, Tri.P1.Y, 0.f);
 			FVector V2(Tri.P2.X, Tri.P2.Y, 0.f);
 			FVector V3(Tri.P3.X, Tri.P3.Y, 0.f);
+
+			FString Msg = FString::Printf(TEXT("jjjjj"));
+			GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, Msg);
 
 			DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
 			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);

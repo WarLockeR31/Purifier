@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AccelerationObstacleTypes.h"
 #include "VelocityObstacleTypes.h"
 #include "VOFollowingComponent.h"
 
@@ -18,7 +19,7 @@ public:
 	static FVector ComputeBestAcceleration(
 		const UVOFollowingComponent* Comp,
 		const FVector& CurVel,
-		const FVector& DesiredVel,
+		const FVector& TargetPos,
 		const TArray<FVONeighborView>& Neis,
 		const FVOParams& Params,
 		// External buffers (owned by Manager)
@@ -51,7 +52,23 @@ public:
 		const TArray<TArray<FAOConeIntersection>>& SideIntersections,
 		TArray<TArray<FAOSegment>>& OutOutsideSegments
 	);
+
+	static FParabolaResult FindParabolaIntersection(
+		const FAOParabola& Curve,
+		const FAOCircle& C1,
+		const FAOCircle& C2,
+		int32 DiscSegments = 16
+	);
+
+	static int32 SolveQuadratic(double A, double B, double C, double& OutX1, double& OutX2);
 	
+	static bool FindCircleCircleIntersections(
+		const FAOCircle& C1,
+		const FAOCircle& C2,
+		FVector2D& OutP1,
+		FVector2D& OutP2
+	);
+
 	/*static void ProcessCandidates(
 		const FAOConesSoA& Cones,
 		const TArray<TArray<FAOConeIntersection>>& SideIntersections,

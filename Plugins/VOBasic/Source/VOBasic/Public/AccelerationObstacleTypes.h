@@ -55,11 +55,13 @@ struct FAOCone
 	FAOSide		LeftSide;
 	FAOSide		RightSide;
 
-	FAOSegment  TimeHorizonSegment; 
+	FAOSegment  TimeHorizonSegment;
+	FAOSegment  MinTimeSegment;
 
 	bool		isLeftSideValid;
 	bool		isRightSideValid;
 	bool		isTHSegmentValid;
+	bool		isMinTimeSegmentValid;
 
 	TArray<FAOTriangle> Tris;
 	TArray<FAOQuad>		Quads;
@@ -67,6 +69,7 @@ struct FAOCone
 struct FAOConesSoA
 {
 	TArray<FAOSegment> TimeHorizonSegment;
+	TArray<FAOSegment> MinTimeSegment;
 
 	TArray<FAOSide>		LeftSide;
 	TArray<FAOSide>		RightSide;
@@ -74,30 +77,35 @@ struct FAOConesSoA
 	TArray<bool>		isLeftSideValid;
 	TArray<bool>		isRightSideValid;
 	TArray<bool>		isTHSegmentValid;
+	TArray<bool>		isMinTimeSegmentValid;
 
 	TArray<TArray<FAOTriangle>> Tris;
 	TArray<TArray<FAOQuad>>		Quads;
 
 	void Reset()
 	{
-		TimeHorizonSegment.Reset(); 
+		TimeHorizonSegment.Reset();
+		MinTimeSegment.Reset();
 		LeftSide.Reset();
 		RightSide.Reset();
 		isLeftSideValid.Reset();
 		isRightSideValid.Reset();
 		isTHSegmentValid.Reset();
+		isMinTimeSegmentValid.Reset();
 		Tris.Reset();
 		Quads.Reset();
 	}
 
 	void Add(const FAOCone& Cone)
 	{
-		TimeHorizonSegment.Add(Cone.TimeHorizonSegment); 
+		TimeHorizonSegment.Add(Cone.TimeHorizonSegment);
+		MinTimeSegment.Add(Cone.MinTimeSegment);
 		LeftSide.Add(Cone.LeftSide);
 		RightSide.Add(Cone.RightSide);
 		isLeftSideValid.Add(Cone.isLeftSideValid);
 		isRightSideValid.Add(Cone.isRightSideValid);
 		isTHSegmentValid.Add(Cone.isTHSegmentValid);
+		isMinTimeSegmentValid.Add(Cone.isMinTimeSegmentValid);
 		Tris.Add(Cone.Tris);
 		Quads.Add(Cone.Quads);
 	}
@@ -105,6 +113,7 @@ struct FAOConesSoA
 	void Reserve(int32 Num)
 	{
 		TimeHorizonSegment.Reserve(Num);
+		MinTimeSegment.Reserve(Num);
 
 		LeftSide.Reserve(Num);
 		RightSide.Reserve(Num);
@@ -112,6 +121,7 @@ struct FAOConesSoA
 		isLeftSideValid.Reserve(Num);
 		isRightSideValid.Reserve(Num);
 		isTHSegmentValid.Reserve(Num);
+		isMinTimeSegmentValid.Reserve(Num);
 
 		Tris.Reserve(Num);
 		Quads.Reserve(Num);
@@ -127,4 +137,25 @@ struct FAOConeIntersection
 	int32 SegmentIndex; 
 	bool bIsEntry;
 	bool bIsIntersection;
+};
+
+struct FAOParabola
+{
+	FVector2D A, B, C;
+	// P(u) = A*u^2 + B*u + C
+	FVector2D Eval(double u) const { return (A * u + B) * u + C; }
+};
+
+struct FParabolaResult
+{
+	bool bFound = false;
+	double U = -1.0;
+	FVector2D Point = FVector2D::ZeroVector;
+};
+
+struct FAOCircle
+{
+	FVector2D Center;
+	double R;
+	double RSq;
 };
