@@ -92,6 +92,8 @@ void UVOManager::Tick(float DeltaTime)
     	// VELOCITY OBSTACLE
     	if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::VelocityObstacle)
     	{
+    		SCOPE_CYCLE_COUNTER(STAT_VOComputeVelocity);
+
     		// Calculate Desired Velocity based on Goal
     		FVector DesiredVel = FVector::ZeroVector;
     		if (Comp->HasVOGoal())
@@ -103,11 +105,47 @@ void UVOManager::Tick(float DeltaTime)
     				DesiredVel = FVector(To2D / Dist * Params.MaxSpeed, 0.f);
     		}
     		
-    		const FVector OutVel = ComputeVelocity(Comp, CurVel, DesiredVel, Neis, Params);
+    		FVOCalculationContext Ctx;
+			Ctx.Comp = Comp;
+			Ctx.ActorPos = Pos;
+			Ctx.CurrentVelocity = CurVel;
+			Ctx.DesiredVelocity = DesiredVel;
+			Ctx.Neis = &Neis;
+			Ctx.Params = &Params;
+
+			// Assign Buffers
+			Ctx.Cones = &VO_Cones;
+			Ctx.Intersections = &VO_Intersections;
+			Ctx.OutsideSegments = &VO_OutsideSegments;
+			
+			// Debug buffers
+			Ctx.OutCandidates = &VO_Candidates;
+			Ctx.OutBestCandidateIdx = &VO_BestCandidateIdx;
+
+    		const FVector OutVel = VOUtility::ComputeVelocity(Ctx);
+    		
     		if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
     		{
     			Move->RequestDirectMove(OutVel, false);
     		}
+    		
+#ifdef DEBUG_ON
+			if (Comp->bDebugDraw)
+			{
+				FlushPersistentDebugLines(Comp->GetWorld());
+				if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
+					VOUtility::DrawCombinedVO(Comp, VO_OutsideSegments);
+				if (CVarVODebugShow.GetValueOnAnyThread() != 0)
+					VOUtility::DrawVOCones(Comp, VO_Cones);
+				for (auto N : Neis)
+				{
+					DrawDebugLine(Comp->GetWorld(), N.Pos, N.Pos + N.Vel, Comp->DebugDrawColor, true, 15.f, 0, 0.3f);
+				}
+				DrawDebugCircle(Comp->GetWorld(), Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
+					
+				VOUtility::DrawVelocityCandidates(Comp, VO_Candidates, VO_BestCandidateIdx, 10.f, 15.f);
+			}
+#endif
     		continue;
     	}
 
@@ -173,76 +211,28 @@ void UVOManager::Tick(float DeltaTime)
     }
 }
 
-FVector UVOManager::ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params)
-{
-	SCOPE_CYCLE_COUNTER(STAT_VOComputeVelocity);
-	
-	const FVector ActorPos = Comp->GetOwnerLocation();
-	
-	const bool bDesiredForbidden = VOUtility::IsVelocityForbidden(FVector2D(DesiredVel.X, DesiredVel.Y), Neis, ActorPos, Params);
-	if (!bDesiredForbidden)
-		return DesiredVel.GetClampedToMaxSize2D(Params.MaxSpeed);
-	
-	VOUtility::BuildVOCones(Neis, ActorPos, Params, VO_Cones);
-	VOUtility::CollectIntersections(VO_Cones, IntersectionsByRays);
-	VOUtility::SortIntersectionsByRays(IntersectionsByRays);
-	VOUtility::ClassifySegments(VO_Cones, Params, IntersectionsByRays, OutsideSegmentsByRays);
-
-	const FVector2D best2D = VOUtility::SelectBestVelocityFromOutsideSegments(
-		FVector2D(DesiredVel.X, DesiredVel.Y),
-		FVector2D(CurVel.X, CurVel.Y),
-		Neis,
-		ActorPos,
-		Params,
-		OutsideSegmentsByRays,
-		Debug_LastCandidates,
-		Debug_BestCandidateIdx
-	);
-	FVector OutVel = FVector(best2D.X, best2D.Y, 0.f);
-
-#ifdef DEBUG_ON
-	UWorld* W = Comp->GetWorld();
-	if (Comp->bDebugDraw)
-	{
-		FlushPersistentDebugLines(Comp->GetWorld());
-		if (CVarCVODebugShow.GetValueOnAnyThread() != 0)
-			VOUtility::DrawCombinedVO(Comp, OutsideSegmentsByRays);
-		if (CVarVODebugShow.GetValueOnAnyThread() != 0)
-			VOUtility::DrawVOCones(Comp, VO_Cones);
-		for (auto N : Neis)
-		{
-			DrawDebugLine(W, N.Pos, N.Pos + N.Vel, Comp->DebugDrawColor, true, 15.f, 0, 0.3f);
-		}
-		DrawDebugCircle(W, Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
-			
-		VOUtility::DrawVelocityCandidates(Comp, Debug_LastCandidates, Debug_BestCandidateIdx, 10.f, 15.f);
-	}
-#endif
-	return OutVel;
-}
-
 void UVOManager::PrepareArrays(size_t NumNeis)
 {
-	// TODO: Think about shrinking
-	
+	// VO Buffers
 	VO_Cones.Reset();
 	VO_Cones.Reserve(NumNeis);
 
 	size_t NumRays = 3 * NumNeis;
-	IntersectionsByRays.SetNum(NumRays, EAllowShrinking::No);
-	for (int32 i = 0; i < IntersectionsByRays.Num(); ++i)
+	VO_Intersections.SetNum(NumRays, EAllowShrinking::No);
+	for (int32 i = 0; i < VO_Intersections.Num(); ++i)
 	{
-		IntersectionsByRays[i].Reset();
-		IntersectionsByRays[i].Reserve(NumRays - 1); // 3 * (N - 1) + 2
+		VO_Intersections[i].Reset();
+		VO_Intersections[i].Reserve(NumRays - 1); // 3 * (N - 1) + 2
 	}
 
-	OutsideSegmentsByRays.SetNum(NumRays, EAllowShrinking::No);
-	for (int32 i = 0; i < OutsideSegmentsByRays.Num(); ++i)
+	VO_OutsideSegments.SetNum(NumRays, EAllowShrinking::No);
+	for (int32 i = 0; i < VO_OutsideSegments.Num(); ++i)
 	{
-		OutsideSegmentsByRays[i].Reset();
-		OutsideSegmentsByRays[i].Reserve(FMath::Max(0, IntersectionsByRays[i].Num()));
+		VO_OutsideSegments[i].Reset();
+		VO_OutsideSegments[i].Reserve(FMath::Max(0, VO_Intersections[i].Num()));
 	}
 
+	// AO Buffers
 	if (AO_WorkSegments.Max() < (int32)NumRays * 5) 
 	{
 		AO_WorkSegments.Reserve(NumRays * 5);

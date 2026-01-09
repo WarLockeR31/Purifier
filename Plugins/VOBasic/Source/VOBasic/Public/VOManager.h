@@ -36,8 +36,10 @@ private:
 
 	// VO Buffers
 	FVOConesSoA VO_Cones;
-	TArray<TArray<FVOConeIntersection>> IntersectionsByRays;
-	TArray<TArray<FVOOutsideSegment>>	OutsideSegmentsByRays;
+	TArray<TArray<FVOConeIntersection>> VO_Intersections;
+	TArray<TArray<FVOOutsideSegment>>	VO_OutsideSegments;
+	TArray<FVector2D> VO_Candidates;
+	int32 VO_BestCandidateIdx = -1;
 
 	// AO Buffers
 	FAOConesSoA AO_Cones;
@@ -46,11 +48,6 @@ private:
 	TArray<TArray<FAOSegment>> AO_OutsideSegments;
 	TArray<FVector2D> AO_Candidates;
 	int32 AO_BestCandidateIdx;
-	
-	FVector ComputeVelocity(const UVOFollowingComponent* Comp, const FVector& CurVel, const FVector& DesiredVel, const TArray<FVONeighborView>& Neis, const FVOParams& Params);
-
-	mutable TArray<FVector2D> Debug_LastCandidates;
-	mutable int32 Debug_BestCandidateIdx = -1;
 
 	// Helpers
 	void PrepareArrays(size_t NumNeis);

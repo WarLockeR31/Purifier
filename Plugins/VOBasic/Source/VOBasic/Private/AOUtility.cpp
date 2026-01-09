@@ -139,79 +139,80 @@ namespace
 		int32 DiscSegments);
 }
 
-#pragma region Public
-FVector AOUtility::ComputeAcceleration(const FAOCalculationContext& Ctx)
+namespace AOUtility
 {
-	if (Ctx.Cones) Ctx.Cones->Reset();
-
-	BuildCones(Ctx);
-	ProcessIntersections(Ctx);
-	FVector2D Best = SelectBestCandidate(Ctx);
-	return FVector(Best.X, Best.Y, 0.f);
-}
-
-void AOUtility::DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones)
-{
-	UWorld* W = Comp->GetWorld();
-	if (!W) return;
-
-	FVector P = Comp->GetOwnerLocation();
-
-	for (int32 i = 0; i < Cones.Num(); ++i)
+	FVector ComputeAcceleration(const FAOCalculationContext& Ctx)
 	{
-		FColor Color = AvoidanceMath::GetColorFromSeed(i);
-		const TArray<FAOTriangle>& ConeTris = Cones.Tris[i];
-		for (const FAOTriangle& Tri : ConeTris)
+		if (Ctx.Cones) Ctx.Cones->Reset();
+
+		BuildCones(Ctx);
+		ProcessIntersections(Ctx);
+		FVector2D Best = SelectBestCandidate(Ctx);
+		return FVector(Best.X, Best.Y, 0.f);
+	}
+
+	void DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones)
+	{
+		UWorld* W = Comp->GetWorld();
+		if (!W) return;
+
+		FVector P = Comp->GetOwnerLocation();
+
+		for (int32 i = 0; i < Cones.Num(); ++i)
 		{
-			FVector V1(Tri.P1.X, Tri.P1.Y, 0.f);
-			FVector V2(Tri.P2.X, Tri.P2.Y, 0.f);
-			FVector V3(Tri.P3.X, Tri.P3.Y, 0.f);
+			FColor Color = AvoidanceMath::GetColorFromSeed(i);
+			const TArray<FAOTriangle>& ConeTris = Cones.Tris[i];
+			for (const FAOTriangle& Tri : ConeTris)
+			{
+				FVector V1(Tri.P1.X, Tri.P1.Y, 0.f);
+				FVector V2(Tri.P2.X, Tri.P2.Y, 0.f);
+				FVector V3(Tri.P3.X, Tri.P3.Y, 0.f);
 
 
-			DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
-			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
-			DrawDebugLine(W, P + V3, P + V1, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V3, P + V1, Color, true, 15.f, 0, 0.6f);
+			}
+
+			const TArray<FAOQuad>& ConeQuads = Cones.Quads[i];
+			for (const FAOQuad& Quad : ConeQuads)
+			{
+				FVector V1(Quad.P1.X, Quad.P1.Y, 0.f);
+				FVector V2(Quad.P2.X, Quad.P2.Y, 0.f);
+				FVector V3(Quad.P3.X, Quad.P3.Y, 0.f);
+				FVector V4(Quad.P4.X, Quad.P4.Y, 0.f);
+
+				DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V3, P + V4, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + V4, P + V1, Color, true, 15.f, 0, 0.6f);
+			}
 		}
+	}
 
-		const TArray<FAOQuad>& ConeQuads = Cones.Quads[i];
-		for (const FAOQuad& Quad : ConeQuads)
+	void DrawAOOutsideSegments(
+		const UVOFollowingComponent* Comp,
+		const TArray<TArray<FAOSegment>>& OutsideSegments)
+	{
+		UWorld* W = Comp->GetWorld();
+		if (!W) return;
+
+		const FVector P = Comp->GetOwnerLocation();
+
+		for (int32 i = 0; i < OutsideSegments.Num(); ++i)
 		{
-			FVector V1(Quad.P1.X, Quad.P1.Y, 0.f);
-			FVector V2(Quad.P2.X, Quad.P2.Y, 0.f);
-			FVector V3(Quad.P3.X, Quad.P3.Y, 0.f);
-			FVector V4(Quad.P4.X, Quad.P4.Y, 0.f);
+			const TArray<FAOSegment>& SegList = OutsideSegments[i];
+			FColor Color = AvoidanceMath::GetColorFromSeed(i / 3);
+			for (const FAOSegment& Seg : SegList)
+			{
+				FVector Start(Seg.P1.X, Seg.P1.Y, 0.f);
+				FVector End(Seg.P2.X, Seg.P2.Y, 0.f);
 
-			DrawDebugLine(W, P + V1, P + V2, Color, true, 15.f, 0, 0.6f);
-			DrawDebugLine(W, P + V2, P + V3, Color, true, 15.f, 0, 0.6f);
-			DrawDebugLine(W, P + V3, P + V4, Color, true, 15.f, 0, 0.6f);
-			DrawDebugLine(W, P + V4, P + V1, Color, true, 15.f, 0, 0.6f);
+				DrawDebugLine(W, P + Start, P + End, Color, true, -1.f, 0, 3.0f);
+			}
 		}
 	}
 }
-
-void AOUtility::DrawAOOutsideSegments(
-	const UVOFollowingComponent* Comp,
-	const TArray<TArray<FAOSegment>>& OutsideSegments)
-{
-	UWorld* W = Comp->GetWorld();
-	if (!W) return;
-
-	const FVector P = Comp->GetOwnerLocation();
-
-	for (int32 i = 0; i < OutsideSegments.Num(); ++i)
-	{
-		const TArray<FAOSegment>& SegList = OutsideSegments[i];
-		FColor Color = AvoidanceMath::GetColorFromSeed(i / 3);
-		for (const FAOSegment& Seg : SegList)
-		{
-			FVector Start(Seg.P1.X, Seg.P1.Y, 0.f);
-			FVector End(Seg.P2.X, Seg.P2.Y, 0.f);
-
-			DrawDebugLine(W, P + Start, P + End, Color, true, -1.f, 0, 3.0f);
-		}
-	}
-}
-#pragma endregion
 
 // Private implementations
 namespace

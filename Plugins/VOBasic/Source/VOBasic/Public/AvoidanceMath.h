@@ -19,8 +19,7 @@ namespace AvoidanceMath
 		const FVector2D& Q1,
 		const FVector2D& Q2,
 		FVector2D& OutPoint,
-		float& OutT
-	);
+		float& OutT);
 
 	VOBASIC_API int32 SolveQuadratic(double A, double B, double C, double& OutX1, double& OutX2);
 
@@ -32,15 +31,13 @@ namespace AvoidanceMath
 		const FVector2D& SegmentP1,
 		const FVector2D& SegmentP2,
 		float& OutT,
-		FVector2D& OutPoint
-	);
+		FVector2D& OutPoint);
 
 	VOBASIC_API bool TryFindSubSegmentInCircle(
 		const FVector2D& P1,
 		const FVector2D& P2,
 		float Radius,
-		FVOSegment* OutSegment
-	);
+		FVOSegment* OutSegment);
 
 	VOBASIC_API bool TryFindSegmentOfRayInCircle(
 		const FVector2D& Apex,
@@ -48,16 +45,14 @@ namespace AvoidanceMath
 		const float Offset,
 		const FVector2D& Dir,
 		const float Radius,
-		FVOSegment* OutSegment
-	);
+		FVOSegment* OutSegment);
 
 
 	VOBASIC_API bool FindCircleCircleIntersections(
 		const FAOCircle& C1,
 		const FAOCircle& C2,
 		FVector2D& OutP1,
-		FVector2D& OutP2
-	);
+		FVector2D& OutP2);
 
 	VOBASIC_API inline FColor GetColorFromSeed(int32 Seed)
 	{

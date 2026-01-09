@@ -7,8 +7,7 @@ bool AvoidanceMath::TryFindSubSegmentInCircle(
 	const FVector2D& P1,
 	const FVector2D& P2,
 	const float Radius,
-	FVOSegment* OutSegment
-)
+	FVOSegment* OutSegment)
 {
 	// Early return when both points inside circle 
 	float P1Squared = P1.SizeSquared();
@@ -176,8 +175,7 @@ bool AvoidanceMath::IsPointInTriangle(const FVector2D& P, const FVector2D& A, co
 bool AvoidanceMath::FindLineAndSegmentIntersection(
 	const FVector2D& LineNormal, const float LineC,
 	const FVector2D& SegmentP1, const FVector2D& SegmentP2,
-	float& outT, FVector2D& outPoint
-)
+	float& outT, FVector2D& outPoint)
 {
 	const float signedDistStart = FVector2D::DotProduct(LineNormal, SegmentP1) + LineC; // s_THL1
 	const float signedDistEnd = FVector2D::DotProduct(LineNormal, SegmentP2) + LineC; // s_THL2
@@ -195,8 +193,7 @@ bool AvoidanceMath::FindLineAndSegmentIntersection(
 
 bool AvoidanceMath::TryFindSegmentOfRayInCircle(
 	const FVector2D& Apex, const FVector2D& Normal, const float Offset,
-	const FVector2D& Dir, const float Radius, FVOSegment* OutSegment
-)
+	const FVector2D& Dir, const float Radius, FVOSegment* OutSegment)
 {
 	const float S = Normal.X * Normal.X + Normal.Y * Normal.Y;
 	const float SInv = 1.f / S;
@@ -250,8 +247,7 @@ bool AvoidanceMath::TryFindSegmentOfRayInCircle(
 }
 
 bool AvoidanceMath::FindCircleCircleIntersections(
-	const FAOCircle& C1, const FAOCircle& C2, FVector2D& OutP1, FVector2D& OutP2
-)
+	const FAOCircle& C1, const FAOCircle& C2, FVector2D& OutP1, FVector2D& OutP2)
 {
 	FVector2D DVec = C2.Center - C1.Center;
 	double DistSq = DVec.SizeSquared();
