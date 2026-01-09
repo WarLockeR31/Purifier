@@ -1,11 +1,11 @@
-#include "VOUtility.h"
+#include "Utils/VOUtility.h"
 
-#include "AvoidanceMath.h"
+#include "Utils/AvoidanceMath.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
-#include "VOManager.h"
-#include "VOFollowingComponent.h"
-#include "VelocityObstacleTypes.h"
+#include "Core/VOManager.h"
+#include "Components/VOFollowingComponent.h"
+#include "Types/VelocityObstacleTypes.h"
 
 // Private declarations
 namespace

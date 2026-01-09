@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "VelocityObstacleTypes.h"
+#include "Types/VelocityObstacleTypes.h"
 
 class UVOFollowingComponent;
 

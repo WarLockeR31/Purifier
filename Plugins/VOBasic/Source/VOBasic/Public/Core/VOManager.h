@@ -1,9 +1,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "CrowdManagerBase.h"
-#include "VOFollowingComponent.h"
-#include "VelocityObstacleTypes.h"
-#include "AccelerationObstacleTypes.h"
+#include "Components/VOFollowingComponent.h"
+#include "Types/VelocityObstacleTypes.h"
+#include "Types/AccelerationObstacleTypes.h"
 #include "VOManager.generated.h"
 
 DECLARE_CYCLE_STAT(TEXT("VO Compute Velocity"), STAT_VOComputeVelocity, STATGROUP_Game);

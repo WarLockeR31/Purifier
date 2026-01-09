@@ -1,6 +1,6 @@
-#include "VOManager.h"
+#include "Core/VOManager.h"
 
-#include "AOUtility.h"
+#include "Utils/AOUtility.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
 #include "GameFramework/Controller.h"
@@ -9,7 +9,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "Stats/Stats.h"
-#include "VOUtility.h"
+#include "Utils/VOUtility.h"
 
 static TAutoConsoleVariable<int32> CVarVODebugShow(
     TEXT("vo.Show"), 0,

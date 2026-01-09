@@ -1,9 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AccelerationObstacleTypes.h"
-#include "VelocityObstacleTypes.h"
-#include "VOFollowingComponent.h"
+#include "Types/AccelerationObstacleTypes.h"
+#include "Types/VelocityObstacleTypes.h"
+#include "Components/VOFollowingComponent.h"
 
 struct FVONeighborView;
 struct FAOConesSoA;

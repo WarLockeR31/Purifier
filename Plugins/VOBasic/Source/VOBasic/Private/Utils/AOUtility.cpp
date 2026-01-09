@@ -1,8 +1,8 @@
-#include "AOUtility.h"
+#include "Utils/AOUtility.h"
 
-#include "AvoidanceMath.h"
-#include "VOManager.h"
-#include "VOSettings.h"
+#include "Utils/AvoidanceMath.h"
+#include "Core/VOManager.h"
+#include "Settings/VOSettings.h"
 
 // Private declarations
 namespace

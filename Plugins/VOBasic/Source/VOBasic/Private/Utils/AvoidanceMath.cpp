@@ -1,7 +1,7 @@
-#include "AvoidanceMath.h"
+#include "Utils/AvoidanceMath.h"
 
-#include "AccelerationObstacleTypes.h"
-#include "VelocityObstacleTypes.h"
+#include "Types/AccelerationObstacleTypes.h"
+#include "Types/VelocityObstacleTypes.h"
 
 bool AvoidanceMath::TryFindSubSegmentInCircle(
 	const FVector2D& P1,

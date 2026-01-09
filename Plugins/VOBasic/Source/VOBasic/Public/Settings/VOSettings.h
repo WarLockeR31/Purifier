@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "GameFramework/Pawn.h"
-#include "VOFollowingComponent.h"
+#include "Components/VOFollowingComponent.h"
 
 #include "VOSettings.generated.h"
 
