@@ -115,15 +115,25 @@ void UVOManager::Tick(float DeltaTime)
         if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
         {
         	FVector TargetPos = Comp->GetMoveGoal();
-            FVector BestAccel = AOUtility::ComputeBestAcceleration(
-                Comp, CurVel, TargetPos, Neis, Params,
-                AO_Cones,				// In/Out Buffer
-                AO_WorkSegments,			// In/Out Buffer
-                AO_SideIntersections,	// In/Out Buffer
-                AO_OutsideSegments,		// In/Out Buffer (Valid Segments)
-                AO_Candidates,			// Debug Buffer
-                AO_BestCandidateIdx		// Debug Index
-            );
+
+        	FAOCalculationContext Ctx;
+    
+        	Ctx.Comp = Comp;
+        	Ctx.ActorPos = Pos;
+        	Ctx.CurrentVelocity = CurVel;
+        	Ctx.TargetPos = TargetPos; 
+        	Ctx.Neis = &Neis;
+        	Ctx.Params = &Params;
+
+        	Ctx.Cones = &AO_Cones;
+        	Ctx.WorkSegments = &AO_WorkSegments;
+        	Ctx.SideIntersections = &AO_SideIntersections;
+        	Ctx.OutsideSegments = &AO_OutsideSegments;
+    
+        	Ctx.OutCandidates = &AO_Candidates;
+        	Ctx.OutBestCandidateIdx = &AO_BestCandidateIdx;
+
+        	FVector BestAccel = AOUtility::ComputeAcceleration(Ctx);
 
             // Apply Acceleration to Movement Component
             if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())

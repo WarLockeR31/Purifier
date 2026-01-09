@@ -1,0 +1,68 @@
+#pragma once
+
+struct FAOCircle;
+struct FVOSegment;
+
+namespace AvoidanceMath
+{
+	VOBASIC_API bool SegmentIntersection2D(
+		const FVector2D& P1,
+		const FVector2D& P2,
+		const FVector2D& Q1,
+		const FVector2D& Q2,
+		FVector2D& OutIntersection
+	);
+
+	VOBASIC_API bool SegmentIntersection2D(
+		const FVector2D& P1,
+		const FVector2D& P2,
+		const FVector2D& Q1,
+		const FVector2D& Q2,
+		FVector2D& OutPoint,
+		float& OutT
+	);
+
+	VOBASIC_API int32 SolveQuadratic(double A, double B, double C, double& OutX1, double& OutX2);
+
+	VOBASIC_API bool IsPointInTriangle(const FVector2D& P, const FVector2D& A, const FVector2D& B, const FVector2D& C);
+
+	VOBASIC_API bool FindLineAndSegmentIntersection(
+		const FVector2D& LineNormal,
+		const float LineC,
+		const FVector2D& SegmentP1,
+		const FVector2D& SegmentP2,
+		float& OutT,
+		FVector2D& OutPoint
+	);
+
+	VOBASIC_API bool TryFindSubSegmentInCircle(
+		const FVector2D& P1,
+		const FVector2D& P2,
+		float Radius,
+		FVOSegment* OutSegment
+	);
+
+	VOBASIC_API bool TryFindSegmentOfRayInCircle(
+		const FVector2D& Apex,
+		const FVector2D& Normal,
+		const float Offset,
+		const FVector2D& Dir,
+		const float Radius,
+		FVOSegment* OutSegment
+	);
+
+
+	VOBASIC_API bool FindCircleCircleIntersections(
+		const FAOCircle& C1,
+		const FAOCircle& C2,
+		FVector2D& OutP1,
+		FVector2D& OutP2
+	);
+
+	VOBASIC_API inline FColor GetColorFromSeed(int32 Seed)
+	{
+		uint32 Hash = Seed * 2654435761;
+		uint8 Hue = (Hash) & 0xFF;
+		return FLinearColor::MakeFromHSV8(Hue, 255, 255).ToFColor(true);
+	}
+}

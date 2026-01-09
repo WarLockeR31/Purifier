@@ -24,14 +24,6 @@ public:
 		
 	static bool WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, 
 		float Radius, float TimeHorizon, float* OutTOI);
-
-	static bool TryFindIntersections(FVOSegment S1, FVOSegment S2, FVector2D* OutPoint, float* OutT);
-	
-	static bool TryFindSegmentOfRayInCircle(const FVector2D& Apex, const FVector2D& Normal, const float Offset,
-		const FVector2D& Dir, const float Radius, FVOSegment* OutSegment);
-	
-	static bool TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius,
-		FVOSegment* OutSegment);
 	
 	static float ScoreVelocityCandidate(const FVector2D& V, const FVector2D& DesiredVel2D,
 		const FVector2D& CurVel2D, const TArray<FVONeighborView>& Neis,

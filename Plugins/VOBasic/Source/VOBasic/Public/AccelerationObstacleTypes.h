@@ -1,5 +1,35 @@
 #pragma once
 
+struct FAOSegment;
+struct FAOConeIntersection;
+struct FAOWorkSegment;
+struct FAOConesSoA;
+struct FVONeighborView;
+struct FVOParams;
+class UVOFollowingComponent;
+
+struct FAOCalculationContext
+{
+	// Input
+	const UVOFollowingComponent* Comp = nullptr;
+	FVector ActorPos = FVector::ZeroVector;
+	FVector CurrentVelocity = FVector::ZeroVector;
+	FVector TargetPos = FVector::ZeroVector;
+    
+	const FVOParams* Params = nullptr;
+	const TArray<FVONeighborView>* Neis = nullptr;
+
+	// Manager Buffers
+	FAOConesSoA* Cones = nullptr;
+	TArray<FAOWorkSegment>* WorkSegments = nullptr;
+	TArray<TArray<FAOConeIntersection>>* SideIntersections = nullptr;
+	TArray<TArray<FAOSegment>>* OutsideSegments = nullptr;
+    
+	// Debug Output
+	TArray<FVector2D>* OutCandidates = nullptr;
+	int32* OutBestCandidateIdx = nullptr;
+};
+
 struct FAOTriangle
 {
 	FVector2D P1;

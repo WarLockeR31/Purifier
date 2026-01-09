@@ -1,4 +1,6 @@
 #include "VOUtility.h"
+
+#include "AvoidanceMath.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "VelocityObstacleTypes.h"
@@ -69,7 +71,7 @@ FVOCone VOUtility::ComputeVOCone(const float R, const FVector2D& C, const FVecto
 
 	// Segments
 	FVOSegment OutSegment;
-	if (TryFindSegmentOfRayInCircle(Cone.LeftRayApex, Cone.LeftRayNormal, Cone.LeftRayOffset, Cone.LeftRayDir,
+	if (AvoidanceMath::TryFindSegmentOfRayInCircle(Cone.LeftRayApex, Cone.LeftRayNormal, Cone.LeftRayOffset, Cone.LeftRayDir,
 									Params.MaxSpeed,
 									&OutSegment))
 	{
@@ -77,7 +79,7 @@ FVOCone VOUtility::ComputeVOCone(const float R, const FVector2D& C, const FVecto
 		Cone.LeftRaySegment = OutSegment;
 	}
 
-	if (TryFindSegmentOfRayInCircle(Cone.RightRayApex, Cone.RightRayNormal, Cone.RightRayOffset, Cone.RightRayDir,
+	if (AvoidanceMath::TryFindSegmentOfRayInCircle(Cone.RightRayApex, Cone.RightRayNormal, Cone.RightRayOffset, Cone.RightRayDir,
 									Params.MaxSpeed,
 									&OutSegment))
 	{
@@ -85,158 +87,13 @@ FVOCone VOUtility::ComputeVOCone(const float R, const FVector2D& C, const FVecto
 		Cone.RightRaySegment = OutSegment;
 	}
 
-	if (TryFindSubSegmentInCircle(Cone.LeftRayApex, Cone.RightRayApex, Params.MaxSpeed, &OutSegment))
+	if (AvoidanceMath::TryFindSubSegmentInCircle(Cone.LeftRayApex, Cone.RightRayApex, Params.MaxSpeed, &OutSegment))
 	{
 		Cone.bIsTHSegmentValid = true;
 		Cone.TimeHorizonSegment = OutSegment;
 	}
 	
 	return Cone;
-}
-
-bool VOUtility::TryFindIntersections(FVOSegment S1, FVOSegment S2, FVector2D* OutPoint, float* OutT)
-{
-	FVector2D Delta1 = S1.P2 - S1.P1;
-	FVector2D Delta2 = S2.P2 - S2.P1;
-
-	float Denominator = Delta1.X * Delta2.Y - Delta1.Y * Delta2.X;
-
-	// Ignore grazing cases
-	if (FMath::IsNearlyZero(Denominator, KINDA_SMALL_NUMBER))
-	{
-		return false;
-	}
-
-	float InvDenominator = 1.f / Denominator;
-	FVector2D S1ToS2 = S2.P1 - S1.P1;
-	float t = (S1ToS2.X * Delta2.Y - S1ToS2.Y * Delta2.X) * InvDenominator;
-	float u = (S1ToS2.X * Delta1.Y - S1ToS2.Y * Delta1.X) * InvDenominator;
-
-	// TODO: Think about edge case:
-	// If S1 (or S2) is degenerate (A == B) and the point lies on the other segment,
-	//    the function returns true and sets OutT = 0 (i.e., at S1.A).
-	
-	// Intersection outside segments
-	if (t < 0.f || t > 1.f || u < 0.f || u > 1.f)
-		return false;
-
-	// Find OutPoint and OutT
-	if (OutPoint)
-	{
-		*OutPoint = S1.P1 + t * Delta1;
-	}
-
-	if (OutT)
-	{
-		*OutT = t;
-	}
-
-	return true;
-}
-
-bool VOUtility::TryFindSegmentOfRayInCircle(const FVector2D& Apex, const FVector2D& Normal, const float Offset,
-                                             const FVector2D& Dir, const float Radius, FVOSegment* OutSegment)
-{
-	const float S       = Normal.X * Normal.X + Normal.Y * Normal.Y;
-	const float SInv	= 1.f / S;
-	const float SInvSqrt = FMath::InvSqrt(S);
-	const float RR      = Radius * Radius;
-	const float D       = FMath::Abs(Offset) * SInvSqrt;    // Distance from center of circle to line
-
-	// Edge case?
-	if (FMath::IsNearlyEqual(D, Radius, KINDA_SMALL_NUMBER) || D > Radius)
-	{
-		return false;
-	}
-
-	const FVector2D Q = FVector2D(Normal.Y, -Normal.X) * FMath::Sqrt(RR * S - Offset * Offset);
-	const FVector2D P1 = (-Normal * Offset + Q) * SInv;
-	const FVector2D P2 = (-Normal * Offset - Q) * SInv;
-
-	const float t1 = FVector2D::DotProduct(P1 - Apex, Dir);
-	const float t2 = FVector2D::DotProduct(P2 - Apex, Dir);
-
-	// No intersections with ray
-	if (t1 < 0.f && t2 < 0.f)
-		return false;
-
-	if (!OutSegment)
-		return true;
-	
-	// 2 Intersections
-	if (t1 > 0.f && t2 > 0.f)
-	{
-		if (t2 > t1)
-		{
-			OutSegment->P1 = P1;
-			OutSegment->P2 = P2;
-		}
-		else
-		{
-			OutSegment->P1 = P2;
-			OutSegment->P2 = P1;
-		}
-
-		return true;
-	}
-
-	// 1 Intersection
-	{
-		OutSegment->P1 = Apex;
-		OutSegment->P2 = t1 >= 0.f ? P1 : P2; // TODO: CHECK
-		return true;
-	}
-}
-
-bool VOUtility::TryFindSubSegmentInCircle(const FVector2D& P1, const FVector2D& P2, const float Radius,
-	FVOSegment* OutSegment)
-{
-	// Early return when both points inside circle 
-	float P1Squared = P1.SizeSquared();
-	float P2Squared = P2.SizeSquared();
-	float RR		= Radius * Radius;
-
-	if (P1Squared <= RR && P2Squared <= RR)
-	{
-		if (OutSegment)
-		{
-			OutSegment->P1 = P1;
-			OutSegment->P2 = P2;
-		}
-		return true;
-	}
-	
-	// Find t values for intersection points
-	FVector2D Delta = P2 - P1;
-	float a = Delta.SizeSquared();
-	float b = 2.f * FVector2D::DotProduct(P1, Delta);
-	float c = P1Squared - RR;
-
-	float Discriminant = b * b - 4.f * a * c;
-
-	// Graze case
-	if (FMath::IsNearlyZero(Discriminant, KINDA_SMALL_NUMBER) || Discriminant < 0.f)
-	{
-		return false;
-	}
-
-	float DiscSqrt = FMath::Sqrt(Discriminant);
-	float InvDenominator = 1.f / (2.f * a);
-	float t1 = (-b - DiscSqrt) * InvDenominator;
-	float t2 = (-b + DiscSqrt) * InvDenominator;
-
-	if (t1 > 1.f || t2 < 0.f)
-		return false;
-	
-	// Find intersection points
-	FVector2D OutPoint1 = (t1 < 0) ? P1 : P1 + Delta * t1;
-	FVector2D OutPoint2 = (t2 > 1) ? P2 : P1 + Delta * t2;
-	if (OutSegment)
-	{
-		OutSegment->P1 = OutPoint1;
-		OutSegment->P2 = OutPoint2;
-	}
-	return true;
 }
 
 bool VOUtility::WillCollideWithinTau(const FVector2D& RelativePosition, const FVector2D& RelativeVelocity, float Radius, float TimeHorizon, float* OutTOI)
@@ -493,7 +350,7 @@ void VOUtility::CollectIntersections(const FVOConesSoA& VOCones, TArray<TArray<F
 			FVector2D	OutPoint;
 			float		OutT;
 			// Find intersections
-			if (VOUtility::TryFindIntersections(SegmentI, SegmentJ, &OutPoint, &OutT))
+			if (AvoidanceMath::SegmentIntersection2D(SegmentI.P1, SegmentI.P2, SegmentJ.P1, SegmentJ.P2, OutPoint, OutT))
 			{
 				const bool bIsFirst = FVector2D::DotProduct(CurRayDir, NormalJ) > 0.f;
 				IntersectionsByRays[i].Add(FVOConeIntersection{ OutPoint, bIsFirst, OutT });
