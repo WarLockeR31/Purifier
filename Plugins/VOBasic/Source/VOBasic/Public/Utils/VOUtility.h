@@ -17,4 +17,6 @@ namespace VOUtility
 	VOBASIC_API void DrawVelocityCandidates(const UVOFollowingComponent* Comp, 
 		const TArray<FVector2D>& Candidates, int32 BestCandidateIdx,
 		float PointSize, float LifeTime);
+
+	VOBASIC_API void DrawMaxSpeedCircle(const UVOFollowingComponent* Comp, float MaxSpeed);
 };

@@ -191,6 +191,12 @@ namespace VOUtility
 			DrawDebugPoint(W, P, Sz, Col, /*bPersistentLines*/ true, LifeTime);
 		}
 	}
+
+	void DrawMaxSpeedCircle(const UVOFollowingComponent* Comp, float MaxSpeed)
+	{
+		if (!Comp || !Comp->GetWorld()) return;
+		DrawDebugCircle(Comp->GetWorld(), Comp->GetOwnerLocation(), MaxSpeed, 32, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
+	}
 }
 
 // Private implementations

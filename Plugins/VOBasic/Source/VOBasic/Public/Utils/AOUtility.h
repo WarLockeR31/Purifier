@@ -20,4 +20,11 @@ namespace AOUtility
 	VOBASIC_API void DrawAOCones(const UVOFollowingComponent* Comp, const FAOConesSoA& Cones);
 
 	VOBASIC_API void DrawAOOutsideSegments(const UVOFollowingComponent* Comp, const TArray<TArray<FAOSegment>>& OutsideSegments);
+
+	VOBASIC_API void DrawAccelConstraints(
+		const UVOFollowingComponent* Comp,
+		const FVector& CurrentVelocity,
+		float MaxSpeed,
+		float MaxAccel,
+		float Tau);
 }

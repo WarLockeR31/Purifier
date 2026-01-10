@@ -29,6 +29,14 @@ static TAutoConsoleVariable<int32> CVarAODebugShowOutside(
 	TEXT("cao.Show"), 0,
 	TEXT("Show valid AO boundary segments"), ECVF_Default);
 
+static TAutoConsoleVariable<int32> CVarAODebugShowConstraints(
+	TEXT("ao.ShowConstraints"), 0,
+	TEXT("Show AO acceleration constraints"), ECVF_Default);
+
+static TAutoConsoleVariable<int32> CVarVODebugShowConstraints(
+	TEXT("vo.ShowConstraints"), 0,
+	TEXT("Show VO velocity constraints"), ECVF_Default);
+
 #define DEBUG_ON
 
 void UVOManager::OnNavDataRegistered(ANavigationData&){ }
@@ -141,7 +149,11 @@ void UVOManager::Tick(float DeltaTime)
 				{
 					DrawDebugLine(Comp->GetWorld(), N.Pos, N.Pos + N.Vel, Comp->DebugDrawColor, true, 15.f, 0, 0.3f);
 				}
-				DrawDebugCircle(Comp->GetWorld(), Comp->GetOwnerLocation(), Params.MaxSpeed, 20, Comp->DebugDrawColor, true, 15.f, 0, 0.6f, FVector(0.f, 1.f, 0.f), FVector(1.f, 0.f, 0.f));
+
+				if (CVarVODebugShowConstraints.GetValueOnAnyThread() != 0)
+				{
+					VOUtility::DrawMaxSpeedCircle(Comp, Params.MaxSpeed);
+				}
 					
 				VOUtility::DrawVelocityCandidates(Comp, VO_Candidates, VO_BestCandidateIdx, 10.f, 15.f);
 			}
@@ -197,7 +209,13 @@ void UVOManager::Tick(float DeltaTime)
                     AOUtility::DrawAOOutsideSegments(Comp, AO_OutsideSegments);
                 }
 
-                if (CVarAODebugShow.GetValueOnAnyThread() != 0 || CVarAODebugShowOutside.GetValueOnAnyThread() != 0)
+                // ao.ShowConstraints
+                if (CVarAODebugShowConstraints.GetValueOnAnyThread() != 0)
+                {
+                    AOUtility::DrawAccelConstraints(Comp, CurVel, Params.MaxSpeed, Params.MaxAcceleration, 1.5f);
+                }
+
+                if (CVarAODebugShow.GetValueOnAnyThread() != 0 || CVarAODebugShowOutside.GetValueOnAnyThread() != 0 || CVarAODebugShowConstraints.GetValueOnAnyThread() != 0)
                 {
                     VOUtility::DrawVelocityCandidates(Comp, AO_Candidates, AO_BestCandidateIdx, 8.f, 0.f);
                     

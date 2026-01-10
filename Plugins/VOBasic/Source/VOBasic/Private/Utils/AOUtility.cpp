@@ -212,6 +212,72 @@ namespace AOUtility
 			}
 		}
 	}
+
+	void DrawAccelConstraints(
+		const UVOFollowingComponent* Comp,
+		const FVector& CurrentVelocity,
+		float MaxSpeed,
+		float MaxAccel,
+		float Tau)
+	{
+		UWorld* W = Comp->GetWorld();
+		if (!W) return;
+
+		const FVector P = Comp->GetOwnerLocation();
+		const FVector AxisX(1.f, 0.f, 0.f);
+		const FVector AxisY(0.f, 1.f, 0.f);
+
+		// 1. Max Acceleration Circle (Always Full)
+		// Radius = MaxAccel
+		DrawDebugCircle(W, P, MaxAccel, 48, FColor::Orange, true, -1.f, 0, 1.5f, AxisY, AxisX);
+
+		// 2. Collision Free Circle (Clipped)
+		// Constraint: |V_new| <= V_max
+		// |V_curr + A * t| <= V_max
+		// |A - (-V_curr/t)| <= V_max/t
+		
+		float Ta = FMath::Max(Tau, 0.01f);
+		FVector2D C2 = FVector2D(CurrentVelocity) * (-1.f / Ta);
+		float R2 = MaxSpeed / Ta;
+		float R2Sq = R2 * R2;
+		float R1Sq = MaxAccel * MaxAccel; // Max Accel constraint (Circle 1)
+
+		const int32 Segments = 64;
+		const float AngleStep = 2.f * PI / Segments;
+		const FColor SafeColor = FColor::Green;
+
+		FVector2D PrevPt;
+		bool bPrevValid = false;
+
+		{
+			float SinA, CosA;
+			FMath::SinCos(&SinA, &CosA, 0.f);
+			PrevPt = C2 + FVector2D(CosA * R2, SinA * R2);
+			bPrevValid = (PrevPt.SizeSquared() <= R1Sq + 1.f); // +1.f tolerance
+		}
+
+		for (int32 i = 1; i <= Segments; ++i)
+		{
+			float Angle = i * AngleStep;
+			float SinA, CosA;
+			FMath::SinCos(&SinA, &CosA, Angle);
+
+			FVector2D CurrLoc = C2 + FVector2D(CosA * R2, SinA * R2);
+			
+			// Check if inside MaxAccel circle (Radius = MaxAccel, Center = 0,0)
+			bool bValid = (CurrLoc.SizeSquared() <= R1Sq + 1.f);
+
+			if (bValid && bPrevValid)
+			{
+				FVector WorldP1 = P + FVector(PrevPt.X, PrevPt.Y, 0.f);
+				FVector WorldP2 = P + FVector(CurrLoc.X, CurrLoc.Y, 0.f);
+				DrawDebugLine(W, WorldP1, WorldP2, SafeColor, true, -1.f, 0, 2.0f);
+			}
+
+			PrevPt = CurrLoc;
+			bPrevValid = bValid;
+		}
+	}
 }
 
 // Private implementations
