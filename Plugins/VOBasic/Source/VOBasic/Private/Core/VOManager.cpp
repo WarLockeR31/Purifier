@@ -17,7 +17,7 @@ static TAutoConsoleVariable<int32> CVarVODebugShow(
     ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarCVODebugShow(
-	TEXT("cvo.Show"), 0,
+	TEXT("vo.cvo.Show"), 0,
 	TEXT("Show VO cones (0/1). Per-component bDebugDraw also must be true."),
 	ECVF_Default);
 
@@ -26,7 +26,7 @@ static TAutoConsoleVariable<int32> CVarAODebugShow(
 	TEXT("Show Acceleration Obstacle geometry (Tris/Quads)"), ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarAODebugShowOutside(
-	TEXT("cao.Show"), 0,
+	TEXT("ao.cao.Show"), 0,
 	TEXT("Show valid AO boundary segments"), ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarAODebugShowConstraints(
