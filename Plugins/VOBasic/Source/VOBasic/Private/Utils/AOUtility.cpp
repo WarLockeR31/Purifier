@@ -7,6 +7,11 @@
 // Private declarations
 namespace
 {
+	static TAutoConsoleVariable<int32> CVarAOUseRVO(
+		TEXT("ao.UseRAO"), 1,
+		TEXT("Use Reciprocal Acceleration Obstacle (1) or standard AO (0)"),
+		ECVF_Default);
+
 	enum class ERemoveInnerPointsResultType : uint8
 	{
 		None,
@@ -287,6 +292,9 @@ namespace
 {
 	void BuildCones(const FAOCalculationContext& Ctx)
 	{
+		const bool bUseRVO = CVarAOUseRVO.GetValueOnAnyThread() != 0;
+		const FVector2D CurAcc = (Ctx.Comp) ? FVector2D(Ctx.Comp->GetCachedAcceleration()) : FVector2D::ZeroVector;
+		
 		const auto& Neis = *Ctx.Neis;
 		const auto& Params = *Ctx.Params;
 		const FVector& ActorPos = Ctx.ActorPos;
@@ -304,7 +312,14 @@ namespace
 			}
 
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
-			OutCones.Add(ComputeAOCone(R, pRel, vRel, FVector2D(N.Acc), Params));
+			
+			FVector2D NeighborAcc(N.Acc);
+			if (bUseRVO)
+			{
+				NeighborAcc = (NeighborAcc + CurAcc) * 0.5f;
+			}
+			
+			OutCones.Add(ComputeAOCone(R, pRel, vRel, NeighborAcc, Params));
 		}
 	}
 
@@ -1338,7 +1353,7 @@ namespace
 	{
 		const float W_Proximity = 1.0f;
 		const float W_Effort = 0.05f;
-		const float W_Smooth = 0.9f;
+		const float W_Smooth = 0.2f;
 
 		float DistDesSq = FVector2D::DistSquared(CandidateAcc, DesiredAcc);
 		float MagSq = CandidateAcc.SizeSquared();

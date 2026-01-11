@@ -164,6 +164,8 @@ void UVOManager::Tick(float DeltaTime)
         // ACCELERATION OBSTACLE
         if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
         {
+        	if (!Comp->HasVOGoal())
+        		continue;
         	FVector TargetPos = Comp->GetMoveGoal();
 
         	FAOCalculationContext Ctx;
@@ -217,7 +219,7 @@ void UVOManager::Tick(float DeltaTime)
 
                 if (CVarAODebugShow.GetValueOnAnyThread() != 0 || CVarAODebugShowOutside.GetValueOnAnyThread() != 0 || CVarAODebugShowConstraints.GetValueOnAnyThread() != 0)
                 {
-                    VOUtility::DrawVelocityCandidates(Comp, AO_Candidates, AO_BestCandidateIdx, 8.f, 0.f);
+                    VOUtility::DrawVelocityCandidates(Comp, AO_Candidates, AO_BestCandidateIdx, 16.f, 0.f);
                     
                     DrawDebugLine(Comp->GetWorld(), Pos, Pos + CurVel, FColor::Blue, true, -1.f, 0, 2.f); // Vel
                     DrawDebugLine(Comp->GetWorld(), Pos, Pos + BestAccel, FColor::Green, true, -1.f, 0, 3.f); // Accel
