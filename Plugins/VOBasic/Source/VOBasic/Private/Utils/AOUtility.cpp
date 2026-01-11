@@ -209,7 +209,7 @@ namespace AOUtility
 		for (int32 i = 0; i < OutsideSegments.Num(); ++i)
 		{
 			const TArray<FAOSegment>& SegList = OutsideSegments[i];
-			FColor Color = AvoidanceMath::GetColorFromSeed(i / 3);
+			FColor Color = AvoidanceMath::GetColorFromSeed(i / 4);
 			for (const FAOSegment& Seg : SegList)
 			{
 				FVector Start(Seg.P1.X, Seg.P1.Y, 0.f);

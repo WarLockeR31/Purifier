@@ -233,6 +233,8 @@ void UVOManager::Tick(float DeltaTime)
 
 void UVOManager::PrepareArrays(size_t NumNeis)
 {
+	// TODO:
+	
 	// VO Buffers
 	VO_Cones.Reset();
 	VO_Cones.Reserve(NumNeis);
