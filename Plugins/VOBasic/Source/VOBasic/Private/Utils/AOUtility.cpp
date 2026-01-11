@@ -555,6 +555,7 @@ namespace
 
 	void FAOConeBuilder::BuildMinTimeSegment()
 	{
+		// TODO: Optimize
 		if (PointsL.Num() > 0 && PointsR.Num() > 0)
 		{
 			const FVector2D P_L_Start = PointsL[0];
@@ -608,7 +609,7 @@ namespace
 		// Normalize negate optimization
 		FVector2D TimeHorizonGrazeNormal = GrazeOffsetFromCenter;
 		TimeHorizonGrazeNormal.Normalize();
-		TimeHorizonGrazeNormal *= -1.f;
+		//TimeHorizonGrazeNormal *= -1.f;
 
 		const float TimeHorizonC = -TimeHorizonGrazeNormal.Dot(TimeHorizonGrazePoint);
 
