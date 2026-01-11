@@ -10,6 +10,11 @@
 // Private declarations
 namespace
 {
+	static TAutoConsoleVariable<int32> CVarVOUseRVO(
+		TEXT("vo.UseRVO"), 1,
+		TEXT("Use Reciprocal Velocity Obstacle (1) or standard VO (0)"),
+		ECVF_Default);
+
     bool WillCollideWithinTau(
         const FVector2D& RelativePosition,
         const FVector2D& RelativeVelocity,
@@ -35,6 +40,7 @@ namespace
     void BuildVOCones(
         const TArray<FVONeighborView>& Neis,
         const FVector& ActorPos,
+        const FVector& CurrentVelocity,
         const FVOParams& Params,
         FVOConesSoA& OutVOCones
     );
@@ -94,7 +100,7 @@ namespace VOUtility
 		}
 
 		// 2. Build Cones
-		BuildVOCones(*Ctx.Neis, Ctx.ActorPos, *Ctx.Params, *Ctx.Cones);
+		BuildVOCones(*Ctx.Neis, Ctx.ActorPos, Ctx.CurrentVelocity, *Ctx.Params, *Ctx.Cones);
 
 		const int32 NumRays = Ctx.Cones->Num() * 3;
 
@@ -317,8 +323,11 @@ namespace
 		return Cone;
 	}
 
-	void BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVOParams& Params, FVOConesSoA& OutVOCones)
+	void BuildVOCones(const TArray<FVONeighborView>& Neis, const FVector& ActorPos, const FVector& CurrentVelocity, const FVOParams& Params, FVOConesSoA& OutVOCones)
 	{
+		const bool bUseRVO = CVarVOUseRVO.GetValueOnAnyThread() != 0;
+		const FVector2D CurrentVel2D(CurrentVelocity.X, CurrentVelocity.Y);
+
 		for (int32 i = 0; i < Neis.Num(); ++i)
 		{
 			const FVONeighborView& N = Neis[i];
@@ -328,7 +337,14 @@ namespace
 			{
 				continue;
 			}
-			OutVOCones.Add(ComputeVOCone(R, pRel, FVector2D(N.Vel), Params));
+			
+			FVector2D ObstacleVel(N.Vel);
+			if (bUseRVO)
+			{
+				ObstacleVel = (ObstacleVel + CurrentVel2D) * 0.5f;
+			}
+
+			OutVOCones.Add(ComputeVOCone(R, pRel, ObstacleVel, Params));
 		}
 	}
 
@@ -527,7 +543,7 @@ namespace
 		// Weights // TODO: Move to config
 		const float WProximity = 1.0f;
 		const float WAlign = 0.1f;
-		const float WSpeed = 0.5f;
+		const float WSpeed = 3.5f;
 		const float WAccelPen = 0.3f;
 
 		// Score
