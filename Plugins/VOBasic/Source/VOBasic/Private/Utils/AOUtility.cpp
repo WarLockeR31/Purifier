@@ -118,6 +118,8 @@ namespace
 	void ClassifySegments(
 		const FAOConesSoA& Cones,
 		const TArray<TArray<FAOConeIntersection>>& SideIntersections,
+		const FVOParams& Params,
+		const FVector& ActorVel,
 		TArray<TArray<FAOSegment>>& OutOutsideSegments);
 
 	// Finding best candidate
@@ -323,7 +325,7 @@ namespace
 
 		CollectIntersections(WorkSegments, SideIntersections);
 		SortSideIntersections(SideIntersections);
-		ClassifySegments(Cones, SideIntersections, OutsideSegments);
+		ClassifySegments(Cones, SideIntersections, *Ctx.Params, Ctx.CurrentVelocity, OutsideSegments);
 	}
 
 	FVector2D SelectBestCandidate(const FAOCalculationContext& Ctx)
@@ -360,7 +362,7 @@ namespace
 			// (Acc + V0/ta)^2 <= (Vmax/ta)^2
 			// Center = -V0 / ta
 			// Radius = Vmax / ta
-			double Ta = /*FMath::Max(Params.TauHorizon, 0.01f)*/1.5f;
+			double Ta = Params.TauAcceleration;
 			FAOCircle C2;
 			C2.Center = FVector2D(CurVel) * (-1.0 / Ta);
 			C2.R = Params.MaxSpeed / Ta;
@@ -1040,9 +1042,17 @@ namespace
 	void ClassifySegments(
 		const FAOConesSoA& Cones,
 		const TArray<TArray<FAOConeIntersection>>& SideIntersections,
+		const FVOParams& Params,
+		const FVector& ActorVel,
 		TArray<TArray<FAOSegment>>& OutOutsideSegments)
 	{
 		OutOutsideSegments.SetNum(SideIntersections.Num());
+
+		const float Ta = Params.TauAcceleration;
+		const float R1 = Params.MaxAcceleration;
+		// Center = -V / Ta
+		const FVector2D C2_Center = FVector2D(ActorVel) * (-1.f / Ta);
+		const float R2 = Params.MaxSpeed / Ta;
 
 		for (int32 RayIdx = 0; RayIdx < SideIntersections.Num(); ++RayIdx)
 		{
@@ -1078,8 +1088,22 @@ namespace
 						else if (SideType == 2) SegNormal = Cones.TimeHorizonSegment[ConeIdx].OutsideNormal;
 						else if (SideType == 3) SegNormal = Cones.MinTimeSegment[ConeIdx].OutsideNormal;
 
-						FAOSegment& NewSeg = OutOutsideSegments[RayIdx].Add_GetRef(FAOSegment());
-						NewSeg.Init(Prev.P, Curr.P, SegNormal);
+						FVOSegment TempSeg;
+						// Clip against Circle 1 (Max Accel)
+						if (AvoidanceMath::TryFindSubSegmentInCircle(Prev.P, Curr.P, R1, &TempSeg))
+						{
+							// Clip against Circle 2
+							// Shift to C2 local space
+							FVector2D P1_Loc = TempSeg.P1 - C2_Center;
+							FVector2D P2_Loc = TempSeg.P2 - C2_Center;
+
+							FVOSegment TempSeg2;
+							if (AvoidanceMath::TryFindSubSegmentInCircle(P1_Loc, P2_Loc, R2, &TempSeg2))
+							{
+								FAOSegment& NewSeg = OutOutsideSegments[RayIdx].Add_GetRef(FAOSegment());
+								NewSeg.Init(TempSeg2.P1 + C2_Center, TempSeg2.P2 + C2_Center, SegNormal);
+							}
+						}
 					}
 				}
 

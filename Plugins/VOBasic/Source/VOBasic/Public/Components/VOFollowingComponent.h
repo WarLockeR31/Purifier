@@ -24,6 +24,9 @@ struct FVOParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
 		meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
 			EditConditionHides))								float			MaxAcceleration = 2000.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+		meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
+			EditConditionHides))								float			TauAcceleration = 1.5f;
 };
 
 UENUM(BlueprintType)

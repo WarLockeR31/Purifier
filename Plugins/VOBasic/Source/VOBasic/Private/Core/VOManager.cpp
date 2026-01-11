@@ -212,7 +212,7 @@ void UVOManager::Tick(float DeltaTime)
                 // ao.ShowConstraints
                 if (CVarAODebugShowConstraints.GetValueOnAnyThread() != 0)
                 {
-                    AOUtility::DrawAccelConstraints(Comp, CurVel, Params.MaxSpeed, Params.MaxAcceleration, 1.5f);
+                    AOUtility::DrawAccelConstraints(Comp, CurVel, Params.MaxSpeed, Params.MaxAcceleration, Params.TauAcceleration);
                 }
 
                 if (CVarAODebugShow.GetValueOnAnyThread() != 0 || CVarAODebugShowOutside.GetValueOnAnyThread() != 0 || CVarAODebugShowConstraints.GetValueOnAnyThread() != 0)
