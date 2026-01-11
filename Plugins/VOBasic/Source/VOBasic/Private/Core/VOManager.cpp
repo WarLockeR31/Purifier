@@ -190,7 +190,7 @@ void UVOManager::Tick(float DeltaTime)
             // Apply Acceleration to Movement Component
             if (auto* Move = P->FindComponentByClass<UPawnMovementComponent>())
             {
-                Move->AddInputVector(BestAccel);
+                Move->AddInputVector(BestAccel / Params.MaxAcceleration);
             }
 
             // DEBUG DRAW AO
