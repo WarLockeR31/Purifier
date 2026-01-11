@@ -354,6 +354,20 @@ namespace
 		const FVector& TargetPos = Ctx.TargetPos;
 		const FVector& CurVel = Ctx.CurrentVelocity;
 
+		FAOCircle C1;
+		C1.Center = FVector2D::ZeroVector;
+		C1.R = Params.MaxAcceleration;
+		C1.RSq = C1.R * C1.R;
+
+		// (Acc + V0/ta)^2 <= (Vmax/ta)^2
+		// Center = -V0 / ta
+		// Radius = Vmax / ta
+		double Ta = Params.TauAcceleration;
+		FAOCircle C2;
+		C2.Center = FVector2D(CurVel) * (-1.0 / Ta);
+		C2.R = Params.MaxSpeed / Ta;
+		C2.RSq = C2.R * C2.R;
+		
 		// TODO: Move to function
 		FVector2D DesiredAcc = FVector2D::ZeroVector;
 		FVector2D TargetPosRel = FVector2D(TargetPos - ActorPos); // For parabola
@@ -368,20 +382,6 @@ namespace
 			Parabola.A = TargetPosRel * 2.0;
 			Parabola.B = VelRel * -2.0;
 			Parabola.C = TargetAcc;
-
-			FAOCircle C1;
-			C1.Center = FVector2D::ZeroVector;
-			C1.R = Params.MaxAcceleration;
-			C1.RSq = C1.R * C1.R;
-
-			// (Acc + V0/ta)^2 <= (Vmax/ta)^2
-			// Center = -V0 / ta
-			// Radius = Vmax / ta
-			double Ta = Params.TauAcceleration;
-			FAOCircle C2;
-			C2.Center = FVector2D(CurVel) * (-1.0 / Ta);
-			C2.R = Params.MaxSpeed / Ta;
-			C2.RSq = C2.R * C2.R;
 
 			FParabolaResult Result = FindParabolaIntersection(Parabola, C1, C2, 16);
 
@@ -417,13 +417,18 @@ namespace
 			}
 		};
 
-		if (CountAOsForPoint(Cones, -1, FVector2D::ZeroVector) == 0)
+		auto IsInConstraints = [&](const FVector2D& P)
+		{
+			return ((P - C1.Center).SizeSquared() < C1.RSq) && ((P - C2.Center).SizeSquared() < C2.RSq);
+		};
+
+		if (IsInConstraints(FVector2D::ZeroVector) && CountAOsForPoint(Cones, -1, FVector2D::ZeroVector) == 0)
 			EvaluatePoint(FVector2D::ZeroVector);
 
-		if (CountAOsForPoint(Cones, -1, DesiredAcc) == 0)
+		if (IsInConstraints(DesiredAcc) && CountAOsForPoint(Cones, -1, DesiredAcc) == 0)
 			EvaluatePoint(DesiredAcc);
 
-		if (CountAOsForPoint(Cones, -1, CurAcc) == 0)
+		if (IsInConstraints(CurAcc) && CountAOsForPoint(Cones, -1, CurAcc) == 0)
 			EvaluatePoint(CurAcc);
 
 		for (const TArray<FAOSegment>& SegList : OutsideSegmentsByRays)
