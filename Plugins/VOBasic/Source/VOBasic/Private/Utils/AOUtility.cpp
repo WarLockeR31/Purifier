@@ -46,9 +46,19 @@ namespace
 
 		TArray<FVector2D> ScratchPoints;
 
+		bool bIsPreColliding = false;
+		bool bIsPostColliding = false;
+		bool bIsLeftPassing = false;
+		bool bIsRightPassing = false;
+		
 		bool bIsConvexL = false;
 		bool bIsConvexR = false;
+		bool bIsConcaveL = false;
+		bool bIsConcaveR = false;
 		float LastValidT = 0.f;
+
+		bool bHasTHOverride = false;
+		float THEffective = 0.f;
 
 		// Result
 		FAOCone& OutCone;
@@ -73,6 +83,8 @@ namespace
 			LastValidT = Params.TauHorizon;
 		}
 
+		void ClassifyConeTopology();
+		void CalculateTHOverride();
 		void SampleBoundaries();
 		void BuildMinTimeSegment();
 		void BuildTimeHorizonCap();
@@ -216,6 +228,11 @@ namespace AOUtility
 				FVector End(Seg.P2.X, Seg.P2.Y, 0.f);
 
 				DrawDebugLine(W, P + Start, P + End, Color, true, -1.f, 0, 3.0f);
+
+				/*// Draw normals
+				FVector Mid = (Start + End) * 0.5f;
+				FVector Normal(Seg.OutsideNormal.X, Seg.OutsideNormal.Y, 0.f);
+				DrawDebugLine(W, P + Mid, P + Mid + Normal * 20.f, Color, true, -1.f, 0, 1.0f);*/
 			}
 		}
 	}
@@ -308,7 +325,7 @@ namespace
 
 			if (R * R >= pRel.SizeSquared())
 			{
-				continue;
+				//continue;
 			}
 
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
@@ -474,7 +491,19 @@ namespace
 
 		FAOConeBuilder Builder(R, C, Vel, Acc, Params, Cone);
 
+		Builder.ClassifyConeTopology();
+		UE_LOG(LogTemp, Warning, TEXT("Pre: %d"), Builder.bIsPreColliding ? 1 : 0);
+		Builder.CalculateTHOverride();
+		if (Builder.bHasTHOverride)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("TH: %f"), Builder.THEffective);
+		}
+		else
+		{
+			Builder.THEffective = Params.TauHorizon;
+		}
 		Builder.SampleBoundaries();
+
 		Builder.BuildMinTimeSegment();
 
 		if (Builder.PointsL.Num() == 0)
@@ -497,8 +526,9 @@ namespace
 	void FAOConeBuilder::SampleBoundaries()
 	{
 		float t = Settings->MinimalReactionTime;
-		const float t_interval = (Params.TauHorizon - Settings->MinimalReactionTime) / Settings->NDiscreteIntervals;
-
+		const float t_interval = (THEffective - Settings->MinimalReactionTime) / Settings->NDiscreteIntervals;
+		int last_i = Settings->NDiscreteIntervals;
+		
 		for (int i = 0; i < Settings->NDiscreteIntervals; ++i)
 		{
 			const float InvT = 1.f / t;
@@ -512,7 +542,7 @@ namespace
 			const float RTimed = 2 * R * InvSqrT;
 			const float DistanceSqr = GrazeToCenterLengthSqr - RTimed * RTimed;
 
-			if (DistanceSqr < 0.f)
+			if (DistanceSqr <= 0.f)
 			{
 				LastValidT = t;
 				break;
@@ -531,13 +561,6 @@ namespace
 			PointsL.Add(PointL);
 			PointsR.Add(PointR);
 
-
-			if (i == 0)
-			{
-				if (GrazeSourceP.X * PointL.Y - GrazeSourceP.Y * PointL.X > 0.f) bIsConvexL = true;
-				if (GrazeSourceP.X * PointR.Y - GrazeSourceP.Y * PointR.X < 0.f) bIsConvexR = true;
-			}
-
 			const FVector2D DirGrazeL = PointL - GrazeSourceP;
 			NormalsL.Add({-DirGrazeL.Y, DirGrazeL.X});
 
@@ -551,6 +574,9 @@ namespace
 		{
 			LastValidT -= t_interval;
 		}
+
+		LastValidT = THEffective;
+
 	}
 
 	void FAOConeBuilder::BuildMinTimeSegment()
@@ -563,20 +589,9 @@ namespace
 			const FVector2D Dir = P_R_Start - P_L_Start;
 			const float DirSq = Dir.SizeSquared();
 
-			FVector2D SegNormal;
-			if (DirSq > KINDA_SMALL_NUMBER)
-			{
-				const float InvLen = FMath::InvSqrt(DirSq);
-				const FVector2D DirNorm = Dir * InvLen;
-				const FVector2D TempNormal(DirNorm.Y, -DirNorm.X);
-
-				const FVector2D ExpansionDir = (PointsL.Num() > 1) ? (PointsL[1] - PointsL[0]) : Vel;
-				SegNormal = (FVector2D::DotProduct(TempNormal, ExpansionDir) > 0) ? -TempNormal : TempNormal;
-			}
-			else
-			{
-				SegNormal = -Vel.GetSafeNormal();
-			}
+			const float InvLen = FMath::InvSqrt(DirSq);
+			const FVector2D DirNorm = Dir * InvLen;
+			FVector2D SegNormal(DirNorm.Y, -DirNorm.X);
 
 			OutCone.MinTimeSegment.Init(P_L_Start, P_R_Start, SegNormal);
 			OutCone.isMinTimeSegmentValid = (DirSq > KINDA_SMALL_NUMBER);
@@ -646,7 +661,8 @@ namespace
 		if (bIsConvexR) MakeConvexSide(PointsR, NormalsR);
 
 		// 2. Remove Self Intersections (Butterfly effect)
-		if (FVector2D::DotProduct(Vel, C) > 0.f)
+		// TODO: Check condition
+		//if (FVector2D::DotProduct(Vel, C) > 0.f)
 		{
 			auto ProcessSide = [&](
 				TArray<FVector2D>& Pts,
@@ -654,9 +670,6 @@ namespace
 				bool bIsLeft,
 				int32& OutFanIdx)
 			{
-				if (bIsLeft && bIsConvexL) return;
-				if (!bIsLeft && bIsConvexR) return;
-
 				RemoveSelfIntersectionsResult Res;
 				FVOSegment THSeg = FVOSegment(OutCone.TimeHorizonSegment.P1, OutCone.TimeHorizonSegment.P2);
 				if (TryFindSelfIntersections(Pts, Nrms, THSeg, Res))
@@ -686,8 +699,8 @@ namespace
 				}
 			};
 
-			ProcessSide(PointsL, NormalsL, true, OutFanIndL);
-			ProcessSide(PointsR, NormalsR, false, OutFanIndR);
+			if (bIsConcaveL) ProcessSide(PointsL, NormalsL, true, OutFanIndL);
+			if (bIsConcaveR) ProcessSide(PointsR, NormalsR, false, OutFanIndR);
 		}
 	}
 
@@ -778,7 +791,7 @@ namespace
 				if (CurIdx > 0)
 				{
 					FVector2D SegDir = InPoints[i - 1] - InPoints[i];
-					if (FVector2D::DotProduct(InNormals[i], SegDir) > 0.01f)
+					if (FVector2D::DotProduct(InNormals[i], SegDir) < -KINDA_SMALL_NUMBER)
 					{
 						OutResult = {ERemoveInnerPointsResultType::SinglePoint, 1, i, CurIdx > 1 ? i - 2 : i};
 						bFoundPossibleResult = true;
@@ -788,7 +801,7 @@ namespace
 				if (!bFoundPossibleResult)
 				{
 					FVector2D SegDirNext = InPoints[i + 1] - InPoints[i];
-					if (FVector2D::DotProduct(InNormals[i], SegDirNext) > 0.01f)
+					if (FVector2D::DotProduct(InNormals[i], SegDirNext) < -KINDA_SMALL_NUMBER)
 					{
 						OutResult = {ERemoveInnerPointsResultType::SinglePoint, 1, i + 2, i};
 						bFoundPossibleResult = true;
@@ -919,6 +932,147 @@ namespace
 		}
 	}
 
+	void FAOConeBuilder::ClassifyConeTopology()
+	{
+		bIsConvexL = false;
+		bIsConvexR = false;
+		bIsConcaveL = false;
+		bIsConcaveR = false;
+
+		const double VelSq = Vel.SizeSquared();
+		
+		const double TouchToleranceSq = 1.0f; 
+		
+		bool bIsTouching = false; 
+
+		if (VelSq > KINDA_SMALL_NUMBER)
+		{
+			// Find t where x(t) = C + Vel*t is closest to origin
+			const double t_closest = -FVector2D::DotProduct(-C, Vel) / VelSq;
+			const FVector2D P_closest = -C + Vel * t_closest;
+			const double DistSq = P_closest.SizeSquared();
+			const double RSq = R * R;
+		
+			const float TouchTolerance = 1.f;
+			const float RadiusTolerated = RSq + 2 * R * TouchTolerance + FMath::Square(TouchTolerance);
+	
+			// Check for Touching (Grazing) case
+			/*if (FMath::IsNearlyEqual(DistSq, RSq, TouchToleranceSq))
+			{
+				bIsTouching = true;
+				//bForceHalfplane = true;
+				return;
+			}*/
+			if (DistSq <= RadiusTolerated)
+			{
+				if (t_closest > -KINDA_SMALL_NUMBER)
+					bIsPreColliding = true;
+				else
+					bIsPostColliding = true;
+			}
+
+			// Determine Side (Orientation)
+			if (!bIsPreColliding && !bIsPostColliding)
+			{
+				// If CrossZ > 0: C (Obstacle) is to the RIGHT of Vel -> Agent passes LEFT.
+				// If CrossZ < 0: C (Obstacle) is to the LEFT of Vel -> Agent passes RIGHT.
+				const double CrossZ = Vel.X * C.Y - Vel.Y * C.X;
+
+				if (CrossZ > 0.f)
+					bIsLeftPassing = true;
+				else
+					bIsRightPassing = true;
+			}
+		}
+		else
+		{
+			// Static case
+			if (C.SizeSquared() < R * R)
+				bIsPreColliding = true;
+			else bIsRightPassing = true;
+		}
+
+		// 2. Apply Topology Logic (Prop 3 + Touching Exception)
+		// TODO: Optimize
+		if (bIsRightPassing)
+		{
+			if (bIsTouching)
+			{
+				// "Touches right side" (Agent passes right) -> Left boundary is straight
+				bIsConvexL = false;
+				bIsConcaveL = false;
+			}
+			else
+			{
+				bIsConcaveL = true;
+			}
+		}
+		else if (bIsLeftPassing || bIsPreColliding)
+		{
+			bIsConvexL = true;
+		}
+
+		if (bIsLeftPassing)
+		{
+			if (bIsTouching)
+			{
+				// "Touches left side" (Agent passes left) -> Right boundary is straight
+				bIsConvexR = false;
+				bIsConcaveR = false;
+			}
+			else
+			{
+				bIsConcaveR = true;
+			}
+		}
+		else if (bIsRightPassing || bIsPreColliding)
+		{
+			bIsConvexR = true;
+		}
+		
+		if (bIsPostColliding)
+		{
+			bIsConcaveL = true;
+			bIsConcaveR = true;
+		}
+	}
+
+	void FAOConeBuilder::CalculateTHOverride()
+	{
+	    const FVector2D V = 0.5f * Vel; 
+	    
+	    const float VelSq = V.SizeSquared();
+	    if (VelSq < KINDA_SMALL_NUMBER) return;
+	
+	    const FVector2D ToObstacle = C; 
+	
+	    const float t_closest = FVector2D::DotProduct(ToObstacle, V) / VelSq;
+	
+	    const FVector2D ClosestPoint = V * t_closest;
+	
+	    const float DistSq = FVector2D::DistSquared(ClosestPoint, ToObstacle);
+	    const float RadiusSq = FMath::Square(R);
+		
+	    const float TouchTolerance = 1.f;
+		const float RadiusTolerated = RadiusSq + 2 * R * TouchTolerance + FMath::Square(TouchTolerance);
+	
+	    if (DistSq >= RadiusTolerated)
+	    {
+	        return;
+	    }
+	
+	    const float BackOffsetDist = FMath::Sqrt(FMath::Max(0.0f, RadiusSq - DistSq));
+	    const float BackOffsetTime = BackOffsetDist / FMath::Sqrt(VelSq);
+	
+	    float T1 = t_closest - BackOffsetTime;
+	
+	    if (T1 > KINDA_SMALL_NUMBER && T1 < Params.TauHorizon)
+	    {
+	        THEffective = T1;
+	        bHasTHOverride = true;
+	    }
+	}	
+	
 	void PrepareAndSortWorkSegments(
 		const FAOConesSoA& InCones,
 		TArray<FAOWorkSegment>& OutWorkSegments,
@@ -1133,7 +1287,7 @@ namespace
 					if (Curr.bIsEntry)
 						CountOfVOs++;
 					else
-						CountOfVOs = FMath::Max(0, CountOfVOs - 1);
+						CountOfVOs = CountOfVOs - 1/*FMath::Max(0, CountOfVOs - 1)*/;
 				}
 			}
 		}
