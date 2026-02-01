@@ -325,7 +325,7 @@ namespace
 
 			if (R * R >= pRel.SizeSquared())
 			{
-				//continue;
+				continue;
 			}
 
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
@@ -408,6 +408,58 @@ namespace
 			}
 		}
 
+		// SFM Repelling forces
+#pragma region SFM
+		FVector2D TotalRepulsion = FVector2D::ZeroVector;
+		if (Neis.Num() > 0)
+		{
+			const float A1 = 10.f; // Long-range strength
+			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
+			const float A2 = /*300.f*/50.f;  // Short-range (physical) strength
+			const float B2 = /*0.2f*/20.f;  // Short-range range
+			const float Lambda = 1/*0.75f*/; // Anisotropy factor
+
+			
+			FVector2D ActorVel2D = FVector2D(CurVel);
+			float ActorVelLen = ActorVel2D.Size();
+			FVector2D ActorVelDir = (ActorVelLen > KINDA_SMALL_NUMBER) ? ActorVel2D / ActorVelLen : FVector2D(1, 0);
+
+			for (const FVONeighborView& Nei : Neis)
+			{
+				FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
+				float DistCentersSq = ToActor.SizeSquared();
+				
+				if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
+
+				float DistCenters = FMath::Sqrt(DistCentersSq);
+				FVector2D e_ij = ToActor / DistCenters; // Unit vector from J (neighbor) to I (robot)
+
+				// d_ij: Distance minus radii
+				float d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+
+				// Anisotropy w(phi)
+				// cos(phi) = -e_ij dot (v_i / |v_i|)
+				float CosPhi = -FVector2D::DotProduct(e_ij, ActorVelDir);
+				
+				// w(phi) = lambda + (1-lambda)*(1+cos(phi))/2
+				float W_Phi = Lambda + (1.f - Lambda) * (0.5f * (1.f + CosPhi));
+
+				// Forces
+				float ForceLong = A1 * FMath::Exp(-d_ij / B1) * W_Phi;
+				float ForceShort = A2 * FMath::Exp(-d_ij / B2);
+
+				TotalRepulsion += e_ij * (ForceLong + ForceShort);
+			}
+
+			DesiredAcc += TotalRepulsion;
+			
+			if (DesiredAcc.SizeSquared() > C1.RSq)
+			{
+				DesiredAcc = DesiredAcc.GetSafeNormal() * C1.R;
+			}
+		}
+#pragma endregion 
+
 		auto& OutCandidates = *Ctx.OutCandidates;
 		int32& OutBestIdx = *Ctx.OutBestCandidateIdx;
 
@@ -442,7 +494,7 @@ namespace
 		if (IsInConstraints(FVector2D::ZeroVector) && CountAOsForPoint(Cones, -1, FVector2D::ZeroVector) == 0)
 			EvaluatePoint(FVector2D::ZeroVector);
 
-		if (IsInConstraints(DesiredAcc) && CountAOsForPoint(Cones, -1, DesiredAcc) == 0)
+		if (/*IsInConstraints(DesiredAcc) &&*/ CountAOsForPoint(Cones, -1, DesiredAcc) == 0)
 			EvaluatePoint(DesiredAcc);
 
 		if (IsInConstraints(CurAcc) && CountAOsForPoint(Cones, -1, CurAcc) == 0)
@@ -472,8 +524,7 @@ namespace
 
 		if (!bFoundAny)
 		{
-			EvaluatePoint(FVector2D::ZeroVector);
-			return FVector2D::ZeroVector;
+			return TotalRepulsion.GetClampedToMaxSize(Params.MaxAcceleration);
 		}
 
 		return BestV;
@@ -657,11 +708,12 @@ namespace
 	void FAOConeBuilder::ResolveConvexityAndIntersections(int32& OutFanIndL, int32& OutFanIndR)
 	{
 		// 1. Build Convex Hull if needed
-		if (bIsConvexL) MakeConvexSide(PointsL, NormalsL);
-		if (bIsConvexR) MakeConvexSide(PointsR, NormalsR);
+		if (bIsConvexR) MakeConvexSide(PointsL, NormalsL);
+		if (bIsConvexL) MakeConvexSide(PointsR, NormalsR);
 
 		// 2. Remove Self Intersections (Butterfly effect)
 		// TODO: Check condition
+		// TODO: FIX SIDES MIS
 		//if (FVector2D::DotProduct(Vel, C) > 0.f)
 		{
 			auto ProcessSide = [&](
@@ -699,8 +751,8 @@ namespace
 				}
 			};
 
-			if (bIsConcaveL) ProcessSide(PointsL, NormalsL, true, OutFanIndL);
-			if (bIsConcaveR) ProcessSide(PointsR, NormalsR, false, OutFanIndR);
+			if (bIsConcaveR) ProcessSide(PointsL, NormalsL, true, OutFanIndL);
+			if (bIsConcaveL) ProcessSide(PointsR, NormalsR, false, OutFanIndR);
 		}
 	}
 
@@ -849,13 +901,15 @@ namespace
 
 	void FAOConeBuilder::Triangulate(int32 FanIndL, int32 FanIndR)
 	{
-		if (!bIsConvexL && bIsConvexR)
+		if (bIsConcaveL/*!bIsConvexL*/ && bIsConvexR)
 		{
-			ZipSides(PointsL, PointsR, FanIndL);
-		}
-		else if (!bIsConvexR && bIsConvexL)
-		{
+			//ZipSides(PointsL, PointsR, FanIndL);
 			ZipSides(PointsR, PointsL, FanIndR);
+		}
+		else if (bIsConcaveR/*!bIsConvexR*/ && bIsConvexL)
+		{
+			//ZipSides(PointsR, PointsL, FanIndR);
+			ZipSides(PointsL, PointsR, FanIndL);
 		}
 		else
 		{
@@ -1512,8 +1566,8 @@ namespace
 		const FVOParams& Params)
 	{
 		const float W_Proximity = 1.0f;
-		const float W_Effort = 0.05f;
-		const float W_Smooth = 0.2f;
+		const float W_Effort = 0.00f;
+		const float W_Smooth = 0.0f;
 
 		float DistDesSq = FVector2D::DistSquared(CandidateAcc, DesiredAcc);
 		float MagSq = CandidateAcc.SizeSquared();
