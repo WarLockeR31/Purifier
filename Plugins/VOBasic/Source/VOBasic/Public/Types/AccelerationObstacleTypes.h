@@ -88,11 +88,6 @@ struct FAOCone
 	FAOSegment  TimeHorizonSegment;
 	FAOSegment  MinTimeSegment;
 
-	bool		isLeftSideValid;
-	bool		isRightSideValid;
-	bool		isTHSegmentValid;
-	bool		isMinTimeSegmentValid;
-
 	TArray<FAOTriangle> Tris;
 	TArray<FAOQuad>		Quads;
 };
@@ -104,11 +99,6 @@ struct FAOConesSoA
 	TArray<FAOSide>		LeftSide;
 	TArray<FAOSide>		RightSide;
 
-	TArray<bool>		isLeftSideValid;
-	TArray<bool>		isRightSideValid;
-	TArray<bool>		isTHSegmentValid;
-	TArray<bool>		isMinTimeSegmentValid;
-
 	TArray<TArray<FAOTriangle>> Tris;
 	TArray<TArray<FAOQuad>>		Quads;
 
@@ -118,10 +108,6 @@ struct FAOConesSoA
 		MinTimeSegment.Reset();
 		LeftSide.Reset();
 		RightSide.Reset();
-		isLeftSideValid.Reset();
-		isRightSideValid.Reset();
-		isTHSegmentValid.Reset();
-		isMinTimeSegmentValid.Reset();
 		Tris.Reset();
 		Quads.Reset();
 	}
@@ -132,10 +118,6 @@ struct FAOConesSoA
 		MinTimeSegment.Add(Cone.MinTimeSegment);
 		LeftSide.Add(Cone.LeftSide);
 		RightSide.Add(Cone.RightSide);
-		isLeftSideValid.Add(Cone.isLeftSideValid);
-		isRightSideValid.Add(Cone.isRightSideValid);
-		isTHSegmentValid.Add(Cone.isTHSegmentValid);
-		isMinTimeSegmentValid.Add(Cone.isMinTimeSegmentValid);
 		Tris.Add(Cone.Tris);
 		Quads.Add(Cone.Quads);
 	}
@@ -148,16 +130,11 @@ struct FAOConesSoA
 		LeftSide.Reserve(Num);
 		RightSide.Reserve(Num);
 
-		isLeftSideValid.Reserve(Num);
-		isRightSideValid.Reserve(Num);
-		isTHSegmentValid.Reserve(Num);
-		isMinTimeSegmentValid.Reserve(Num);
-
 		Tris.Reserve(Num);
 		Quads.Reserve(Num);
 	}
 
-	int32 Num() const { return isLeftSideValid.Num(); }
+	int32 Num() const { return TimeHorizonSegment.Num(); }
 };
 
 struct FAOConeIntersection

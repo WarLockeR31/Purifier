@@ -110,12 +110,13 @@ namespace
 	FVector2D SelectBestCandidate(const FAOCalculationContext& Ctx);
 
 	// Cone computing
-	FAOCone ComputeAOCone(
+	bool ComputeAOCone(
 		const float R,
 		const FVector2D& C,
 		const FVector2D& Vel,
 		const FVector2D& Acc,
-		const FVOParams& Params);
+		const FVOParams& Params,
+		FAOCone& OutCone);
 	TArray<FVector2D> BuildConvexSide(const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals);
 	bool TryFindSelfIntersections(
 		const TArray<FVector2D>& Points,
@@ -335,8 +336,11 @@ namespace
 			{
 				NeighborAcc = (NeighborAcc + CurAcc) * 0.5f;
 			}
-			
-			OutCones.Add(ComputeAOCone(R, pRel, vRel, NeighborAcc, Params));
+
+			FAOCone Cone;
+			if (ComputeAOCone(R, pRel, vRel, NeighborAcc, Params, Cone))
+				OutCones.Add(Cone);
+			//OutCones.Add(ComputeAOCone(R, pRel, vRel, NeighborAcc, Params));
 		}
 	}
 
@@ -491,6 +495,7 @@ namespace
 			return ((P - C1.Center).SizeSquared() < C1.RSq) && ((P - C2.Center).SizeSquared() < C2.RSq);
 		};
 
+		// TODO: Clamp instead of skipping
 		if (IsInConstraints(FVector2D::ZeroVector) && CountAOsForPoint(Cones, -1, FVector2D::ZeroVector) == 0)
 			EvaluatePoint(FVector2D::ZeroVector);
 
@@ -531,16 +536,15 @@ namespace
 	}
 
 
-	FAOCone ComputeAOCone(
+	bool ComputeAOCone(
 		const float R,
 		const FVector2D& C,
 		const FVector2D& Vel,
 		const FVector2D& Acc,
-		const FVOParams& Params)
+		const FVOParams& Params,
+		FAOCone& OutCone)
 	{
-		FAOCone Cone;
-
-		FAOConeBuilder Builder(R, C, Vel, Acc, Params, Cone);
+		FAOConeBuilder Builder(R, C, Vel, Acc, Params, OutCone);
 
 		Builder.ClassifyConeTopology();
 		UE_LOG(LogTemp, Warning, TEXT("Pre: %d"), Builder.bIsPreColliding ? 1 : 0);
@@ -555,11 +559,10 @@ namespace
 		}
 		Builder.SampleBoundaries();
 
-		Builder.BuildMinTimeSegment();
-
 		if (Builder.PointsL.Num() == 0)
-			return Cone;
-
+			return false;
+		
+		Builder.BuildMinTimeSegment(); 
 		Builder.BuildTimeHorizonCap();
 
 		int32 FanIndL = -1, FanIndR = -1;
@@ -569,9 +572,10 @@ namespace
 		{
 			Builder.Triangulate(FanIndL, FanIndR);
 			Builder.FinalizeSegments();
+			return true;
 		}
-
-		return Cone;
+		
+		return false;
 	}
 
 	void FAOConeBuilder::SampleBoundaries()
@@ -632,25 +636,16 @@ namespace
 
 	void FAOConeBuilder::BuildMinTimeSegment()
 	{
-		// TODO: Optimize
-		if (PointsL.Num() > 0 && PointsR.Num() > 0)
-		{
-			const FVector2D P_L_Start = PointsL[0];
-			const FVector2D P_R_Start = PointsR[0];
-			const FVector2D Dir = P_R_Start - P_L_Start;
-			const float DirSq = Dir.SizeSquared();
+		const FVector2D P_L_Start = PointsL[0];
+		const FVector2D P_R_Start = PointsR[0];
+		const FVector2D Dir = P_R_Start - P_L_Start;
+		const float DirSq = Dir.SizeSquared();
 
-			const float InvLen = FMath::InvSqrt(DirSq);
-			const FVector2D DirNorm = Dir * InvLen;
-			FVector2D SegNormal(DirNorm.Y, -DirNorm.X);
+		const float InvLen = FMath::InvSqrt(DirSq);
+		const FVector2D DirNorm = Dir * InvLen;
+		FVector2D SegNormal(DirNorm.Y, -DirNorm.X);
 
-			OutCone.MinTimeSegment.Init(P_L_Start, P_R_Start, SegNormal);
-			OutCone.isMinTimeSegmentValid = (DirSq > KINDA_SMALL_NUMBER);
-		}
-		else
-		{
-			OutCone.isMinTimeSegmentValid = false;
-		}
+		OutCone.MinTimeSegment.Init(P_L_Start, P_R_Start, SegNormal);
 	}
 
 	void FAOConeBuilder::BuildTimeHorizonCap()
@@ -701,8 +696,6 @@ namespace
 		}
 
 		OutCone.TimeHorizonSegment.Init(PointsL.Last(), PointsR.Last(), TimeHorizonGrazeNormal);
-		OutCone.isTHSegmentValid = FVector2D::DistSquared(OutCone.TimeHorizonSegment.P1, OutCone.TimeHorizonSegment.P2)
-			> KINDA_SMALL_NUMBER;
 	}
 
 	void FAOConeBuilder::ResolveConvexityAndIntersections(int32& OutFanIndL, int32& OutFanIndR)
@@ -865,38 +858,24 @@ namespace
 		return bFoundPossibleResult;
 	}
 
-	// TODO: Normal validation
 	bool FAOConeBuilder::ValidateShape()
 	{
-		bool bIsValid = false;
+		if (OutCone.MinTimeSegment.P1.SizeSquared() <= FMath::Square(R) ||
+			OutCone.MinTimeSegment.P2.SizeSquared() <= FMath::Square(R))
+			return false;
 
-		auto CheckSide = [&](const TArray<FVector2D>& SidePoints) -> bool
+		FVector2D Dir = OutCone.MinTimeSegment.P2 - OutCone.MinTimeSegment.P1;
+		float LengthSqr = Dir.SizeSquared();
+		float t = - (OutCone.MinTimeSegment.P1.X * Dir.X + OutCone.MinTimeSegment.P1.Y * Dir.Y) / LengthSqr;
+
+		if (t > 0 && t < 1)
 		{
-			if (SidePoints.Num() < 2) return false;
-			FVector2D Prev = SidePoints.Last();
-			for (int i = SidePoints.Num() - 2; i >= 0; --i)
-			{
-				FVOSegment Seg;
-				// Params captured from context
-				if (AvoidanceMath::TryFindSubSegmentInCircle(Prev, SidePoints[i], Params.MaxAcceleration, &Seg))
-				{
-					return true;
-				}
-				Prev = SidePoints[i];
-			}
-			return true;
-		};
-
-		if (CheckSide(PointsL)) bIsValid = true;
-		else if (CheckSide(PointsR)) bIsValid = true;
-
-		if (bIsValid)
-		{
-			OutCone.isLeftSideValid = true;
-			OutCone.isRightSideValid = true;
-			// isTHSegmentValid already set in BuildTimeHorizonCap
+			FVector2D ClosestPoint = OutCone.MinTimeSegment.P1 + Dir * t;
+			if (ClosestPoint.SizeSquared() <= FMath::Square(R))
+				return false;
 		}
-		return bIsValid;
+
+		return true;
 	}
 
 	void FAOConeBuilder::Triangulate(int32 FanIndL, int32 FanIndR)
@@ -950,12 +929,13 @@ namespace
 
 	void FAOConeBuilder::FinalizeSegments()
 	{
-		if (OutCone.isLeftSideValid && PointsL.Num() > 1)
+		// TODO: Remove ifs
+		if (PointsL.Num() > 1)
 		{
 			ConvertSideToSegments(PointsL, OutCone.LeftSide, true);
 		}
 
-		if (OutCone.isRightSideValid && PointsR.Num() > 1)
+		if (PointsR.Num() > 1)
 		{
 			ConvertSideToSegments(PointsR, OutCone.RightSide, false);
 		}
@@ -1151,19 +1131,19 @@ namespace
 			};
 
 			// Left (SideIdx = 0)
-			if (InCones.isLeftSideValid[i])
+			//if (InCones.isLeftSideValid[i])
 			{
 				AddSideToWork(InCones.LeftSide[i].Segments, 0);
 			}
 
 			// Right (SideIdx = 1)
-			if (InCones.isRightSideValid[i])
+			//if (InCones.isRightSideValid[i])
 			{
 				AddSideToWork(InCones.RightSide[i].Segments, 1);
 			}
 
 			// Time Horizon (SideIdx = 2)
-			if (InCones.isTHSegmentValid[i])
+			//if (InCones.isTHSegmentValid[i])
 			{
 				FAOWorkSegment& WS = OutWorkSegments.Add_GetRef(FAOWorkSegment());
 				WS.ConeIdx = i;
@@ -1173,7 +1153,7 @@ namespace
 			}
 
 			// Min Time Segment (SideIdx = 3)
-			if (InCones.isMinTimeSegmentValid[i])
+			//if (InCones.isMinTimeSegmentValid[i])
 			{
 				FAOWorkSegment& WS = OutWorkSegments.Add_GetRef(FAOWorkSegment());
 				WS.ConeIdx = i;
