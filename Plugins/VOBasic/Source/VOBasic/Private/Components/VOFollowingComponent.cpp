@@ -206,6 +206,24 @@ void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
 	}
 }
 
+#ifdef SAVE_VO_PATHS
+void UVOFollowingComponent::UpdatePathHistory(float DeltaTime)
+{
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+		
+	if (CurrentTime - LastPathSaveTime > PathSaveInterval)
+	{
+		PathHistory.Add(GetOwnerLocation());
+		LastPathSaveTime = CurrentTime;
+
+		if (PathHistory.Num() > PathHistorySize)
+		{
+			PathHistory.RemoveAt(0);
+		}
+	}
+}
+#endif
+
 // TODO: Delete
 void UVOFollowingComponent::SetFakeVelocity(const FVector& InVelocity)
 {

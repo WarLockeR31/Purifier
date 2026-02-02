@@ -67,6 +67,16 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO|Debug")	bool		bDebugDraw = false;
 	UPROPERTY(EditAnywhere, Category="VO|Debug")	FColor		DebugDrawColor = FColor::Red;
+
+#ifdef SAVE_VO_PATHS
+	TArray<FVector> PathHistory;
+	float LastPathSaveTime = 0.0f;
+	float PathSaveInterval = 0.1f;
+	int PathHistorySize = 100;
+
+	void UpdatePathHistory(float DeltaTime);
+#endif
+	
 	UPROPERTY(EditAnywhere, Category="VO")			FVOParams	Params;
 	
 	UFUNCTION(BlueprintCallable, Category="VO|Config") void SetVOProfile(FName InProfileName);

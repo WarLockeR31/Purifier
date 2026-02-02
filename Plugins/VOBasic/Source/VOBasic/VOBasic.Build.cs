@@ -48,5 +48,7 @@ public class VOBasic : ModuleRules
 				
 			}
 			);
+		
+		PublicDefinitions.Add("SAVE_VO_PATHS=1");
 	}
 }

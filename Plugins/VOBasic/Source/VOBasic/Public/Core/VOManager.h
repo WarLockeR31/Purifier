@@ -1,7 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "CrowdManagerBase.h"
-#include "Components/VOFollowingComponent.h"
 #include "Types/VelocityObstacleTypes.h"
 #include "Types/AccelerationObstacleTypes.h"
 #include "VOManager.generated.h"
@@ -51,4 +50,6 @@ private:
 
 	// Helpers
 	void PrepareArrays(size_t NumNeis);
+
+	void DrawAgentPath(const UVOFollowingComponent* Comp, const TArray<FVector>& PathHistory, const FColor& Color = FColor::Red);
 };
