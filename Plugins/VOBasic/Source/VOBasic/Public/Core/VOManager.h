@@ -15,6 +15,13 @@ struct FVONeighborView
 	FVector Vel = FVector::ZeroVector;   // world XY
 	FVector Acc = FVector::ZeroVector;   // world XY
 	float Radius = 34.f;                 // cm
+	float CCT = 0.f;					 // Conservative Collision Time
+
+	FVONeighborView() = default;
+	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_)
+	{
+		Pos = Pos_; Vel = Vel_; Acc = Acc_; Radius = Radius_; CCT = CCT_;
+	}
 };
 
 UCLASS()
@@ -47,6 +54,28 @@ private:
 	TArray<TArray<FAOSegment>> AO_OutsideSegments;
 	TArray<FVector2D> AO_Candidates;
 	int32 AO_BestCandidateIdx;
+
+	void GatherNeighbors(const UVOFollowingComponent* Comp, const FVOParams& Params, TArray<FVONeighborView>& Neis);
+	// CCT for agents
+	float CalculateCCT_VO(
+		const UVOFollowingComponent* Agent,
+		const FVOParams& AgentParams,
+		const UVOFollowingComponent* Obstacle);
+	float CalculateCCT_AO(
+		const UVOFollowingComponent* Agent,
+		const FVOParams& AgentParams,
+		const UVOFollowingComponent* Obstacle);
+	// CCT for static obstacles
+	float CalculateCCT_VO(
+		const UVOFollowingComponent* Comp,
+		const FVOParams& AgentParams,
+		const FVector2D& P,
+		const FVector2D& Q);
+	float CalculateCCT_AO(
+		const UVOFollowingComponent* Comp,
+		const FVOParams& AgentParams,
+		const FVector2D& P,
+		const FVector2D& Q);
 
 	// Helpers
 	void PrepareArrays(size_t NumNeis);

@@ -84,22 +84,8 @@ void UVOManager::Tick(float DeltaTime)
 
 		// Collect Neighbors
 		TArray<FVONeighborView> Neis;
-		const float Range = Params.NeighborRange;
-		const float R2 = Range * Range;
-		for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
-		{
-			UVOFollowingComponent* Other = It.Get();
-			if (!Other || Other == Comp) continue;
-			if (FVector::DistSquared2D(Pos, Other->GetOwnerLocation()) > R2) continue;
-
-			FVONeighborView V;
-			V.Pos = Other->GetOwnerLocation();
-			V.Vel = Other->GetCachedVelocity();
-           
-			V.Acc = (Other->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle) ? Other->GetCachedAcceleration() : FVector::ZeroVector;
-			V.Radius = Other->GetAgentRadius();
-			Neis.Add(V);
-		}
+		int MaxNeisCount = 5;
+		GatherNeighbors(Comp, Params, Neis);
 
 		// Prepare Buffers
 		PrepareArrays(Neis.Num());
@@ -256,6 +242,232 @@ void UVOManager::Tick(float DeltaTime)
 	}
 #endif
 }
+
+void UVOManager::GatherNeighbors(
+    const UVOFollowingComponent* Comp,
+    const FVOParams& Params,
+    TArray<FVONeighborView>& Neis)
+{
+    Neis.Reset(); 
+    //Neis.Reserve(5);
+
+	struct FCandidate {
+		UVOFollowingComponent* Component;
+		float t;
+    
+		FCandidate(UVOFollowingComponent* InComp, float InT) 
+			: Component(InComp), t(InT) 
+		{}
+	};
+
+	TArray<FCandidate, TInlineAllocator<5>> Candidates;
+
+    const FVector Pos = Comp->GetOwnerLocation();
+    const float NeighborRangeSqr = FMath::Square(Params.NeighborRange);
+    
+    int32 MaxTIdx = -1;
+
+    for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+    {
+       	UVOFollowingComponent* Other = It.Get();
+       	
+       	if (!Other || Other == Comp)
+       		continue;
+       	if (FVector::DistSquared2D(Pos, Other->GetOwnerLocation()) > NeighborRangeSqr)
+       		continue;
+	
+       	// TODO: Add FOV for Agents
+	
+       	float t = -1.f;
+       	switch (Params.AvoidanceStyle)
+       	{
+       	    case EAvoidanceStyle::VelocityObstacle:
+       	       t = CalculateCCT_VO(Comp, Params, Other);
+       	       break;
+       	    case EAvoidanceStyle::AccelerationObstacle:
+       	       t = CalculateCCT_AO(Comp, Params, Other);
+       	       break;
+       	    default:
+       	       continue; 
+       	}
+
+    	if (Candidates.Num() < 5)
+    	{
+    		Candidates.Emplace(Other, t);
+           
+    		if (MaxTIdx == -1 || t > Candidates[MaxTIdx].t)
+    		{
+    			MaxTIdx = Candidates.Num() - 1;
+    		}
+    	}
+    	else if (t < Candidates[MaxTIdx].t)
+    	{
+    		Candidates[MaxTIdx] = {Other, t};
+
+    		// New max
+    		float NewMax = -1.f;
+    		for (int32 i = 0; i < 5; ++i)
+    		{
+    			if (Candidates[i].t > NewMax)
+    			{
+    				NewMax = Candidates[i].t;
+    				MaxTIdx = i;
+    			}
+    		}
+    	}
+    }
+
+	Neis.Reserve(Candidates.Num());
+
+	for (const FCandidate& Cand : Candidates)
+	{
+		FVector NPos = Cand.Component->GetOwnerLocation();
+		FVector NVel = Cand.Component->GetCachedVelocity();
+		FVector NAcc = Cand.Component->GetCachedAcceleration();
+		float NRad = Cand.Component->GetAgentRadius();
+
+		Neis.Emplace(NPos, NVel, NAcc, NRad, Cand.t);
+	}
+}
+
+// CCT for agents
+float UVOManager::CalculateCCT_VO(
+	const UVOFollowingComponent* Agent,
+	const FVOParams& AgentParams,
+	const UVOFollowingComponent* Obstacle)
+{
+	float RoughGap = FVector::Dist2D(Agent->GetOwnerLocation(), Obstacle->GetOwnerLocation()) - (AgentParams.AgentRadius + Obstacle->GetAgentRadius());
+	float MaxApproachSpeed = AgentParams.MaxSpeed + (FVector2D(Obstacle->GetCachedVelocity()) | FVector2D(Agent->GetOwnerLocation() - Obstacle->GetOwnerLocation()));
+	// TODO: Negative case & colliding case
+	return RoughGap / MaxApproachSpeed;
+}
+
+float UVOManager::CalculateCCT_AO(
+	const UVOFollowingComponent* Agent,
+	const FVOParams& AgentParams,
+	const UVOFollowingComponent* Obstacle)
+{
+	const FVOParams& ObstacleParams = Obstacle->GetEffectiveParams();
+	
+	FVector2D ToObstacle = FVector2D(Obstacle->GetOwnerLocation() - Agent->GetOwnerLocation());
+	const float CombinedRadius = AgentParams.AgentRadius + ObstacleParams.AgentRadius;
+	float DistSq = ToObstacle.SizeSquared();
+	if (DistSq <= FMath::Square(CombinedRadius))
+	{
+		return 0.0f;
+	}
+	float Dist = FMath::Sqrt(DistSq);
+	float RoughGap = Dist - CombinedRadius;
+	FVector2D ToObstacleNorm = ToObstacle.GetSafeNormal();
+	FVector2D ToAgentNorm = -ToObstacleNorm;
+	
+	float AgentVel = FVector2D(Agent->GetCachedVelocity()) | ToObstacleNorm;
+	
+	float ObstacleVel = FVector2D(Obstacle->GetCachedVelocity()) | ToAgentNorm;
+	float ObstacleAcc = FVector2D(Obstacle->GetCachedAcceleration()) | ToAgentNorm;
+
+	float AgentSaturationT = 0.f;
+	if (AgentVel < AgentParams.MaxSpeed)
+		AgentSaturationT = (AgentParams.MaxSpeed - AgentVel) / AgentParams.MaxAcceleration;
+	float ObstacleSaturationT = 0.f;
+	if (ObstacleVel < ObstacleParams.MaxSpeed)
+		ObstacleSaturationT = (ObstacleParams.MaxSpeed - ObstacleVel) / ObstacleAcc;
+
+	float T1, T2;
+	float Accel1, Accel2; 
+	const float TotalMaxAccel = AgentParams.MaxAcceleration + ObstacleParams.MaxAcceleration;
+	if (AgentSaturationT < ObstacleSaturationT)
+	{
+		T1 = AgentSaturationT;
+		T2 = ObstacleSaturationT;
+		Accel1 = TotalMaxAccel;                
+		Accel2 = ObstacleParams.MaxAcceleration;
+	}
+	else
+	{
+		T1 = ObstacleSaturationT;
+		T2 = AgentSaturationT;
+		Accel1 = TotalMaxAccel;
+		Accel2 = AgentParams.MaxAcceleration;
+	}
+	
+	float CurrentGap = RoughGap;
+	float CurrentVel = AgentVel + ObstacleVel;
+	float CurrentTime = 0.0f;
+
+	// [0 -> T1]
+	{
+		float DT = T1;
+		// s = v*t + 0.5*a*t^2
+		float DistCovered = (CurrentVel * DT) + (0.5f * Accel1 * DT * DT);
+
+		if (DistCovered >= CurrentGap)
+		{
+			// 0.5*a*t^2 + v*t - Gap = 0
+			// t = (-v + sqrt(v^2 + 2*a*Gap)) / a
+			float Discriminant = (CurrentVel * CurrentVel) + (2.0f * Accel1 * CurrentGap);
+			if (Discriminant < 0.f)
+				return MAX_flt;
+            
+			return (-CurrentVel + FMath::Sqrt(Discriminant)) / Accel1;
+		}
+
+		CurrentGap -= DistCovered;
+		CurrentVel += Accel1 * DT;
+		CurrentTime += DT;
+	}
+
+	// [T1 -> T2]
+	{
+		float DT = T2 - T1;
+		if (DT > KINDA_SMALL_NUMBER)
+		{
+			float DistCovered = (CurrentVel * DT) + (0.5f * Accel2 * DT * DT);
+
+			if (DistCovered >= CurrentGap)
+			{
+				float Discriminant = (CurrentVel * CurrentVel) + (2.0f * Accel2 * CurrentGap);
+				if (Discriminant < 0.f)
+					return MAX_flt;
+
+				return CurrentTime + ((-CurrentVel + FMath::Sqrt(Discriminant)) / Accel2);
+			}
+
+			CurrentGap -= DistCovered;
+			CurrentVel += Accel2 * DT;
+			CurrentTime += DT;
+		}
+	}
+
+	// [T2 -> Infinity]
+	if (CurrentVel <= 0.f)
+	{
+		return MAX_flt;
+	}
+
+	return CurrentTime + (CurrentGap / CurrentVel);
+}
+
+// CCT for static obstacles
+float UVOManager::CalculateCCT_VO(
+	const UVOFollowingComponent* Comp,
+	const FVOParams& AgentParams,
+	const FVector2D& P,
+	const FVector2D& Q)
+{
+	// TODO
+	return 0;
+}
+float UVOManager::CalculateCCT_AO(
+	const UVOFollowingComponent* Comp,
+	const FVOParams& AgentParams,
+	const FVector2D& P,
+	const FVector2D& Q)
+{
+	// TODO
+	return 0;
+}
+
 
 void UVOManager::PrepareArrays(size_t NumNeis)
 {
