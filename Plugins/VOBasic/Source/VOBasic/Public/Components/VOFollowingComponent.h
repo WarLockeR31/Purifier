@@ -1,6 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "Navigation/PathFollowingComponent.h"
+#include "Navigation/CrowdFollowingComponent.h"
 #include "VOFollowingComponent.generated.h"
 
 class UVOSettings;
@@ -57,7 +57,7 @@ struct VOBASIC_API FVOParamModifier
 };
 
 UCLASS(ClassGroup=AI, meta=(BlueprintSpawnableComponent))
-class VOBASIC_API UVOFollowingComponent : public UPathFollowingComponent
+class VOBASIC_API UVOFollowingComponent : public UCrowdFollowingComponent
 {
 	GENERATED_BODY()
 
@@ -89,8 +89,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAvoidanceStyle();
 
 	UFUNCTION(BlueprintCallable, Category="VO") const FVOParams& GetEffectiveParams() const;
-	
+
+	// TODO: Delete
 	UFUNCTION(BlueprintCallable, Category="VO") void SetMoveGoal(const FVector& InGoal) { bHasGoal = true; Goal = InGoal; }
+	// TODO: Delete
 	UFUNCTION(BlueprintCallable, Category="VO") void ClearMoveGoal()					{ bHasGoal = false; }
 
 	// TODO: Delete
@@ -111,6 +113,13 @@ public:
 	void			UpdateKinematics(float DeltaTime);
 	FVector			GetCachedVelocity()		const { return CachedVelocity; }
 	FVector			GetCachedAcceleration() const { return CachedAcceleration; }
+
+	// Index in UVOManager arrays (for O(1) access and removal)
+	int32			VOManagerIndex = INDEX_NONE;
+
+	// Cached index from Detour (UCrowdManager::ActiveAgents)
+	int32			DetourAgentIndex = INDEX_NONE;
+
 protected:
 	virtual void OnRegister() override;
 	virtual void OnUnregister() override;

@@ -271,3 +271,118 @@ bool AvoidanceMath::FindCircleCircleIntersections(
 	return true;
 }
 
+bool AvoidanceMath::TryFindCircleTangents(
+	const FVector2D& Source,
+	const FVector2D& C,
+	const float R,
+	const float InvSqrT,
+	FVector2D& PointL,
+	FVector2D& PointR,
+	FVector2D& NormalL,
+	FVector2D& NormalR)
+{
+	const FVector2D GrazeToCenterOffset = Source - C;
+
+	const float GrazeToCenterLengthSqr = GrazeToCenterOffset.SizeSquared();
+	const float RTimed = 2 * R * InvSqrT;
+	const float DistanceSqr = GrazeToCenterLengthSqr - RTimed * RTimed;
+
+	if (DistanceSqr <= 0.f)
+	{
+		return false;
+	}
+
+	const float InvGrazeLenSqr = 1.f / GrazeToCenterLengthSqr;
+	const float RTimedOverGrazeToCenterLenSqr = RTimed * InvGrazeLenSqr;
+
+	const FVector2D b = C + (RTimed * RTimedOverGrazeToCenterLenSqr) * GrazeToCenterOffset;
+	const float k_h = RTimedOverGrazeToCenterLenSqr * FMath::Sqrt(DistanceSqr);
+	const FVector2D c(-GrazeToCenterOffset.Y * k_h, GrazeToCenterOffset.X * k_h);
+
+	PointL = b + c;
+	PointR = b - c;
+
+	const FVector2D DirGrazeL = PointL - Source;
+	NormalL = {-DirGrazeL.Y, DirGrazeL.X};
+	
+	const FVector2D DirGrazeR = PointR - Source;
+	NormalR = {DirGrazeR.Y, -DirGrazeR.X};
+
+	return true;
+}
+
+bool AvoidanceMath::TryFindCapsuleTangents(
+	const FVector2D& Source,
+	const FVector2D& C1,
+	const FVector2D& C2,
+	const FVector2D& C,
+	const float R,
+	const float InvSqrT,
+	FVector2D& PointL,
+	FVector2D& PointR,
+	FVector2D& NormalL,
+	FVector2D& NormalR)
+{
+	// C1 & C2 = relative to C
+	FVector2D C1Timed = C1 * 2 * InvSqrT + C;
+	FVector2D C2Timed = C2 * 2 * InvSqrT + C;
+	const float RTimed = 2 * R * InvSqrT;
+	//const float RTimed = 2 * R * InvSqrT;
+
+	// TODO: Remove?
+	float DistSq = FVector2D::DistSquared(Source, FMath::ClosestPointOnSegment2D(Source, C1Timed, C2Timed));
+	if (DistSq <= RTimed * RTimed)
+		return false;
+	
+	FVector2D C1toC2 = C2Timed - C1Timed;
+	FVector2D C1toC2Normalized = C1toC2.GetSafeNormal();
+	FVector2D ROffset = FVector2D(C1toC2Normalized.Y, -C1toC2Normalized.X);
+	FVector2D C1toSource = Source - C1Timed;
+	float t = (C1toSource | C1toC2) / (C1toC2 | C1toC2);
+
+	if (FMath::Abs(C1toSource | ROffset) < RTimed)
+	{
+		if (t <= 0.0f)
+		{
+			UE_LOG(LogTemp, Log, TEXT("1"));
+			return TryFindCircleTangents(Source, C1Timed, R, InvSqrT, PointL, PointR, NormalL, NormalR);
+		}
+
+		if (t >= 1.0f)
+		{
+			UE_LOG(LogTemp, Log, TEXT("2"));
+			return TryFindCircleTangents(Source, C2Timed, R, InvSqrT, PointL, PointR, NormalL, NormalR);
+		}
+	}
+	
+	{
+		FVector2D L1, R1, NL1, NR1;
+		FVector2D L2, R2, NL2, NR2;
+
+		bool bFoundC1 = TryFindCircleTangents(Source, C1Timed, R, InvSqrT, L1, R1, NL1, NR1);
+		bool bFoundC2 = TryFindCircleTangents(Source, C2Timed, R, InvSqrT, L2, R2, NL2, NR2);
+
+		if (bFoundC1 && bFoundC2)
+		{
+			UE_LOG(LogTemp, Log, TEXT("3"));
+			float Cross = C1toC2 ^ C1toSource;
+          
+			if (Cross > 0.0f)
+			{
+				PointL = L1; NormalL = NL1; // Берем левую от C1
+				PointR = R2; NormalR = NR2; // Берем правую от C2
+			}
+			else
+			{
+				PointL = L2; NormalL = NL2; // Берем левую от C2
+				PointR = R1; NormalR = NR1; // Берем правую от C1
+			}
+
+			return true;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("4"));
+	}
+
+	return false;
+}

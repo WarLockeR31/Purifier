@@ -37,6 +37,8 @@ namespace
 		const FVector2D Acc;
 		const FVOParams& Params;
 		const UVOSettings* Settings;
+		const FVONeighborView& Neighbor;
+		const TArray<FVector2D>& NeighborVertices;
 
 		// Buffers
 		TArray<FVector2D> PointsL;
@@ -69,8 +71,10 @@ namespace
 			const FVector2D& InVel,
 			const FVector2D& InAcc,
 			const FVOParams& InParams,
+			const FVONeighborView& InNeighbor,
+			const TArray<FVector2D>& InNeighborVertices,
 			FAOCone& ConeRef)
-			: R(InR), C(InC), Vel(InVel), Acc(InAcc), Params(InParams), OutCone(ConeRef)
+			: R(InR), C(InC), Vel(InVel), Acc(InAcc), Params(InParams), OutCone(ConeRef), Neighbor(InNeighbor), NeighborVertices(InNeighborVertices)
 		{
 			Settings = UVOSettings::Get();
 
@@ -116,6 +120,8 @@ namespace
 		const FVector2D& Vel,
 		const FVector2D& Acc,
 		const FVOParams& Params,
+		const FVONeighborView& Neighbor,
+		const TArray<FVector2D>& NeighborVertices,
 		FAOCone& OutCone);
 	TArray<FVector2D> BuildConvexSide(const TArray<FVector2D>& Points, const TArray<FVector2D>& Normals);
 	bool TryFindSelfIntersections(
@@ -168,6 +174,7 @@ namespace AOUtility
 		BuildCones(Ctx);
 		ProcessIntersections(Ctx);
 		FVector2D Best = SelectBestCandidate(Ctx);
+		//return FVector::ZeroVector;
 		return FVector(Best.X, Best.Y, 0.f);
 	}
 
@@ -324,7 +331,7 @@ namespace
 			const float R = Params.AgentRadius + N.Radius;
 			const FVector2D pRel(N.Pos.X - ActorPos.X, N.Pos.Y - ActorPos.Y);
 
-			if (R * R >= pRel.SizeSquared())
+			if (N.NumVertices == 0 && R * R >= pRel.SizeSquared())
 			{
 				continue;
 			}
@@ -332,13 +339,13 @@ namespace
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
 			
 			FVector2D NeighborAcc(N.Acc);
-			if (bUseRVO)
+			if (bUseRVO && N.NumVertices == 0)
 			{
 				NeighborAcc = (NeighborAcc + CurAcc) * 0.5f;
 			}
 
 			FAOCone Cone;
-			if (ComputeAOCone(R, pRel, vRel, NeighborAcc, Params, Cone))
+			if (ComputeAOCone(R, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
 				OutCones.Add(Cone);
 			//OutCones.Add(ComputeAOCone(R, pRel, vRel, NeighborAcc, Params));
 		}
@@ -413,13 +420,13 @@ namespace
 		}
 
 		// SFM Repelling forces
-#pragma region SFM
+#ifdef AO_SFM_REPULSION
 		FVector2D TotalRepulsion = FVector2D::ZeroVector;
 		if (Neis.Num() > 0)
 		{
 			const float A1 = 10.f; // Long-range strength
 			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
-			const float A2 = /*300.f*/50.f;  // Short-range (physical) strength
+			const float A2 = /*300.f*/10.f;  // Short-range (physical) strength
 			const float B2 = /*0.2f*/20.f;  // Short-range range
 			const float Lambda = 1/*0.75f*/; // Anisotropy factor
 
@@ -430,16 +437,37 @@ namespace
 
 			for (const FVONeighborView& Nei : Neis)
 			{
-				FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
-				float DistCentersSq = ToActor.SizeSquared();
+				// Distance minus radii
+				float d_ij;
+				// Unit vector from J (neighbor) to I (robot)
+				FVector2D e_ij;
+
+				if (Nei.NumVertices == 0)
+				{
+					FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
+					float DistCentersSq = ToActor.SizeSquared();
+					float DistCenters = FMath::Sqrt(DistCentersSq);
 				
-				if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
+					if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
+					// TODO: Think?
+					e_ij = ToActor / DistCenters; 
+					d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+				}
+				else
+				{
+					const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
+					FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(ActorPos), NeiVertices[Nei.VerticesOffset], NeiVertices[Nei.VerticesOffset + 1]);
+					FVector2D ToActor = FVector2D(ActorPos.X - ClosestPoint.X, ActorPos.Y - ClosestPoint.Y);
+					float DistSq = ToActor.SizeSquared();
+					float Dist = FMath::Sqrt(DistSq);
 
-				float DistCenters = FMath::Sqrt(DistCentersSq);
-				FVector2D e_ij = ToActor / DistCenters; // Unit vector from J (neighbor) to I (robot)
+					if (DistSq < KINDA_SMALL_NUMBER) continue;
 
-				// d_ij: Distance minus radii
-				float d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+					e_ij = ToActor / Dist;
+					d_ij = Dist - (Params.AgentRadius + Nei.Radius);
+				}
+				
+				
 
 				// Anisotropy w(phi)
 				// cos(phi) = -e_ij dot (v_i / |v_i|)
@@ -453,6 +481,10 @@ namespace
 				float ForceShort = A2 * FMath::Exp(-d_ij / B2);
 
 				TotalRepulsion += e_ij * (ForceLong + ForceShort);
+				if (Nei.NumVertices != 0)
+				{
+					TotalRepulsion += e_ij * (ForceLong + ForceShort);
+				}
 			}
 
 			DesiredAcc += TotalRepulsion;
@@ -462,7 +494,7 @@ namespace
 				DesiredAcc = DesiredAcc.GetSafeNormal() * C1.R;
 			}
 		}
-#pragma endregion 
+#endif
 
 		auto& OutCandidates = *Ctx.OutCandidates;
 		int32& OutBestIdx = *Ctx.OutBestCandidateIdx;
@@ -529,7 +561,11 @@ namespace
 
 		if (!bFoundAny)
 		{
+#ifdef AO_SFM_REPULSION
 			return TotalRepulsion.GetClampedToMaxSize(Params.MaxAcceleration);
+#else
+			return FVector2D::ZeroVector;
+#endif
 		}
 
 		return BestV;
@@ -542,9 +578,11 @@ namespace
 		const FVector2D& Vel,
 		const FVector2D& Acc,
 		const FVOParams& Params,
+		const FVONeighborView& Neighbor,
+		const TArray<FVector2D>& NeighborVertices,
 		FAOCone& OutCone)
 	{
-		FAOConeBuilder Builder(R, C, Vel, Acc, Params, OutCone);
+		FAOConeBuilder Builder(R, C, Vel, Acc, Params, Neighbor, NeighborVertices, OutCone);
 
 		Builder.ClassifyConeTopology();
 		UE_LOG(LogTemp, Warning, TEXT("Pre: %d"), Builder.bIsPreColliding ? 1 : 0);
@@ -566,7 +604,7 @@ namespace
 		Builder.BuildTimeHorizonCap();
 
 		int32 FanIndL = -1, FanIndR = -1;
-		Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
+		//Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
 
 		if (Builder.ValidateShape())
 		{
@@ -586,41 +624,37 @@ namespace
 		
 		for (int i = 0; i < Settings->NDiscreteIntervals; ++i)
 		{
+			FVector2D PointL, PointR, NormalL, NormalR;
+			
 			const float InvT = 1.f / t;
 			const float InvSqrT = InvT * InvT;
 
 			const FVector2D CenterLineP = 2 * C * InvSqrT - 2 * Vel * InvT + Acc;
 			const FVector2D GrazeSourceP = -Vel * InvT + Acc;
-			const FVector2D GrazeToCenterOffset = GrazeSourceP - CenterLineP;
 
-			const float GrazeToCenterLengthSqr = GrazeToCenterOffset.SizeSquared();
-			const float RTimed = 2 * R * InvSqrT;
-			const float DistanceSqr = GrazeToCenterLengthSqr - RTimed * RTimed;
-
-			if (DistanceSqr <= 0.f)
+			if (Neighbor.NumVertices == 0)
 			{
-				LastValidT = t;
-				break;
+				if (!AvoidanceMath::TryFindCircleTangents(GrazeSourceP, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
+				{
+					LastValidT = t;
+					return;
+				}
 			}
-
-			const float InvGrazeLenSqr = 1.f / GrazeToCenterLengthSqr;
-			const float RTimedOverGrazeToCenterLenSqr = RTimed * InvGrazeLenSqr;
-
-			const FVector2D b = CenterLineP + (RTimed * RTimedOverGrazeToCenterLenSqr) * GrazeToCenterOffset;
-			const float k_h = RTimedOverGrazeToCenterLenSqr * FMath::Sqrt(DistanceSqr);
-			const FVector2D c(-GrazeToCenterOffset.Y * k_h, GrazeToCenterOffset.X * k_h);
-
-			const FVector2D PointL = b + c;
-			const FVector2D PointR = b - c;
+			else
+			{
+				const FVector2D& P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
+				const FVector2D& P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
+				if (!AvoidanceMath::TryFindCapsuleTangents(GrazeSourceP, P1, P2, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
+				{
+					LastValidT = t;
+					return;
+				}
+			}
 
 			PointsL.Add(PointL);
 			PointsR.Add(PointR);
-
-			const FVector2D DirGrazeL = PointL - GrazeSourceP;
-			NormalsL.Add({-DirGrazeL.Y, DirGrazeL.X});
-
-			const FVector2D DirGrazeR = PointR - GrazeSourceP;
-			NormalsR.Add({DirGrazeR.Y, -DirGrazeR.X});
+			NormalsL.Add(NormalL);
+			NormalsR.Add(NormalR);
 
 			t += t_interval;
 		}
@@ -636,6 +670,7 @@ namespace
 
 	void FAOConeBuilder::BuildMinTimeSegment()
 	{
+		// TODO: graze
 		const FVector2D P_L_Start = PointsL[0];
 		const FVector2D P_R_Start = PointsR[0];
 		const FVector2D Dir = P_R_Start - P_L_Start;
@@ -650,7 +685,7 @@ namespace
 
 	void FAOConeBuilder::BuildTimeHorizonCap()
 	{
-		float t = LastValidT;
+		/*float t = LastValidT;
 
 		const float InvT = 1.f / t;
 		const float InvSqrT = InvT * InvT;
@@ -676,6 +711,7 @@ namespace
 
 		float outT = 0.f;
 		FVector2D TimeHorizonL = FVector2D::ZeroVector;
+		FVector2D TimeHorizonR = FVector2D::ZeroVector;
 
 		if (AvoidanceMath::FindLineAndSegmentIntersection(
 			TimeHorizonGrazeNormal,
@@ -689,13 +725,35 @@ namespace
 			const FVector2D LastNormL = NormalsL.Last();
 			NormalsL.Add(LastNormL);
 
-			const FVector2D TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
+			/*const FVector2D TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
+			PointsR.Add(TimeHorizonR);
+			const FVector2D LastNormR = NormalsR.Last();
+			NormalsR.Add(LastNormR);#1#
+		}
+
+		if (AvoidanceMath::FindLineAndSegmentIntersection(
+			TimeHorizonGrazeNormal,
+			TimeHorizonC,
+			GrazeSourceP,
+			PointsR.Last(),
+			outT,
+			TimeHorizonR))
+		{
 			PointsR.Add(TimeHorizonR);
 			const FVector2D LastNormR = NormalsR.Last();
 			NormalsR.Add(LastNormR);
-		}
+		}*/
 
-		OutCone.TimeHorizonSegment.Init(PointsL.Last(), PointsR.Last(), TimeHorizonGrazeNormal);
+		const FVector2D P_L_Start = PointsL[PointsL.Num() - 1];
+		const FVector2D P_R_Start = PointsR[PointsR.Num() - 1];
+		const FVector2D Dir = P_R_Start - P_L_Start;
+		const float DirSq = Dir.SizeSquared();
+
+		const float InvLen = FMath::InvSqrt(DirSq);
+		const FVector2D DirNorm = Dir * InvLen;
+		FVector2D SegNormal(-DirNorm.Y, DirNorm.X);
+
+		OutCone.TimeHorizonSegment.Init(PointsL.Last(), PointsR.Last(), SegNormal/*TimeHorizonGrazeNormal*/);
 	}
 
 	void FAOConeBuilder::ResolveConvexityAndIntersections(int32& OutFanIndL, int32& OutFanIndR)

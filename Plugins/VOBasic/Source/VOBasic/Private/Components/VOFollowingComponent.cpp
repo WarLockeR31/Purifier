@@ -30,8 +30,6 @@ void UVOFollowingComponent::OnUnregister()
 	Super::OnUnregister();
 }
 
-
-
 void UVOFollowingComponent::SetVOProfile(FName InProfileName)
 {
 	//TODO: Check for validity
@@ -45,8 +43,6 @@ void UVOFollowingComponent::SetVOOverrides(const FVOParams& InOverrides, bool bE
 	bUseOverrides = bEnable;
 	MarkEffectiveDirty();
 }
-
-
 
 int32 UVOFollowingComponent::AddParamModifier(const FVOParamModifier& InMod)
 {

@@ -17,6 +17,7 @@ struct FVOCalculationContext
     
 	const FVOParams* Params = nullptr;
 	const TArray<FVONeighborView>* Neis = nullptr;
+	const TArray<FVector2D>* NeighborVertices = nullptr;
 
 	// Manager Buffers
 	FVOConesSoA* Cones = nullptr;

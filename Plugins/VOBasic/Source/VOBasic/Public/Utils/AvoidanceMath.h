@@ -54,6 +54,27 @@ namespace AvoidanceMath
 		FVector2D& OutP1,
 		FVector2D& OutP2);
 
+	VOBASIC_API bool TryFindCircleTangents(
+		const FVector2D& Source,
+		const FVector2D& C,
+		float R,
+		float InvSqrT,
+		FVector2D& PointL,
+		FVector2D& PointR,
+		FVector2D& NormalL,
+		FVector2D& NormalR);
+	VOBASIC_API bool TryFindCapsuleTangents(
+		const FVector2D& Source,
+		const FVector2D& C1,
+		const FVector2D& C2,
+		const FVector2D& C,
+		float R,
+		float InvSqrT,
+		FVector2D& PointL,
+		FVector2D& PointR,
+		FVector2D& NormalL,
+		FVector2D& NormalR);
+	
 	VOBASIC_API inline FColor GetColorFromSeed(int32 Seed)
 	{
 		uint32 Hash = Seed * 2654435761;
