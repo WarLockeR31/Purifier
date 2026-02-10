@@ -331,7 +331,8 @@ namespace
 			const float R = Params.AgentRadius + N.Radius;
 			const FVector2D pRel(N.Pos.X - ActorPos.X, N.Pos.Y - ActorPos.Y);
 
-			if (N.NumVertices == 0 && R * R >= pRel.SizeSquared())
+			// TODO: For all shapes
+			if (N.ShapeType == EMinkowskiShapeType::Circle && R * R >= pRel.SizeSquared())
 			{
 				continue;
 			}
@@ -339,7 +340,7 @@ namespace
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
 			
 			FVector2D NeighborAcc(N.Acc);
-			if (bUseRVO && N.NumVertices == 0)
+			if (bUseRVO && N.NeighborType == ENeighborType::Dynamic)
 			{
 				NeighborAcc = (NeighborAcc + CurAcc) * 0.5f;
 			}
@@ -347,7 +348,6 @@ namespace
 			FAOCone Cone;
 			if (ComputeAOCone(R, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
 				OutCones.Add(Cone);
-			//OutCones.Add(ComputeAOCone(R, pRel, vRel, NeighborAcc, Params));
 		}
 	}
 
@@ -442,31 +442,37 @@ namespace
 				// Unit vector from J (neighbor) to I (robot)
 				FVector2D e_ij;
 
-				if (Nei.NumVertices == 0)
+				switch (Nei.ShapeType)
 				{
-					FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
-					float DistCentersSq = ToActor.SizeSquared();
-					float DistCenters = FMath::Sqrt(DistCentersSq);
-				
-					if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
-					// TODO: Think?
-					e_ij = ToActor / DistCenters; 
-					d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+				case EMinkowskiShapeType::Circle:
+					{
+						FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
+						float DistCentersSq = ToActor.SizeSquared();
+						float DistCenters = FMath::Sqrt(DistCentersSq);
+					
+						if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
+						// TODO: Think?
+						e_ij = ToActor / DistCenters; 
+						d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+						break;
+					}
+				case EMinkowskiShapeType::Capsule:
+					{
+						const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
+						FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(ActorPos), NeiVertices[Nei.VerticesOffset], NeiVertices[Nei.VerticesOffset + 1]);
+						FVector2D ToActor = FVector2D(ActorPos.X - ClosestPoint.X, ActorPos.Y - ClosestPoint.Y);
+						float DistSq = ToActor.SizeSquared();
+						float Dist = FMath::Sqrt(DistSq);
+					
+						if (DistSq < KINDA_SMALL_NUMBER) continue;
+					
+						e_ij = ToActor / Dist;
+						d_ij = Dist - (Params.AgentRadius + Nei.Radius);
+						break;
+					}
+				default:
+					UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Nei.ShapeType);
 				}
-				else
-				{
-					const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
-					FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(ActorPos), NeiVertices[Nei.VerticesOffset], NeiVertices[Nei.VerticesOffset + 1]);
-					FVector2D ToActor = FVector2D(ActorPos.X - ClosestPoint.X, ActorPos.Y - ClosestPoint.Y);
-					float DistSq = ToActor.SizeSquared();
-					float Dist = FMath::Sqrt(DistSq);
-
-					if (DistSq < KINDA_SMALL_NUMBER) continue;
-
-					e_ij = ToActor / Dist;
-					d_ij = Dist - (Params.AgentRadius + Nei.Radius);
-				}
-				
 				
 
 				// Anisotropy w(phi)
@@ -480,15 +486,15 @@ namespace
 				float ForceLong = A1 * FMath::Exp(-d_ij / B1) * W_Phi;
 				float ForceShort = A2 * FMath::Exp(-d_ij / B2);
 
-				TotalRepulsion += e_ij * (ForceLong + ForceShort);
-				if (Nei.NumVertices != 0)
-				{
-					TotalRepulsion += e_ij * (ForceLong + ForceShort);
-				}
+				FVector2D Repulsion = e_ij * (ForceLong + ForceShort);
+				if (Nei.NeighborType == ENeighborType::Static)
+					Repulsion *= 2;
+				TotalRepulsion += Repulsion;
 			}
 
 			DesiredAcc += TotalRepulsion;
-			
+
+			// TODO: Add clamping by 2nd circle?
 			if (DesiredAcc.SizeSquared() > C1.RSq)
 			{
 				DesiredAcc = DesiredAcc.GetSafeNormal() * C1.R;
@@ -632,23 +638,25 @@ namespace
 			const FVector2D CenterLineP = 2 * C * InvSqrT - 2 * Vel * InvT + Acc;
 			const FVector2D GrazeSourceP = -Vel * InvT + Acc;
 
-			if (Neighbor.NumVertices == 0)
+			switch (Neighbor.ShapeType)
 			{
+			case EMinkowskiShapeType::Circle:
 				if (!AvoidanceMath::TryFindCircleTangents(GrazeSourceP, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
 				{
 					LastValidT = t;
 					return;
 				}
-			}
-			else
-			{
-				const FVector2D& P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
-				const FVector2D& P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
+				break;
+			case EMinkowskiShapeType::Capsule:
+				const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
+				const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
 				if (!AvoidanceMath::TryFindCapsuleTangents(GrazeSourceP, P1, P2, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
 				{
 					LastValidT = t;
 					return;
 				}
+			default:
+				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Neighbor.ShapeType);
 			}
 
 			PointsL.Add(PointL);
@@ -938,14 +946,12 @@ namespace
 
 	void FAOConeBuilder::Triangulate(int32 FanIndL, int32 FanIndR)
 	{
-		if (bIsConcaveL/*!bIsConvexL*/ && bIsConvexR)
+		if (bIsConcaveL && bIsConvexR)
 		{
-			//ZipSides(PointsL, PointsR, FanIndL);
 			ZipSides(PointsR, PointsL, FanIndR);
 		}
-		else if (bIsConcaveR/*!bIsConvexR*/ && bIsConvexL)
+		else if (bIsConcaveR && bIsConvexL)
 		{
-			//ZipSides(PointsR, PointsL, FanIndR);
 			ZipSides(PointsL, PointsR, FanIndL);
 		}
 		else

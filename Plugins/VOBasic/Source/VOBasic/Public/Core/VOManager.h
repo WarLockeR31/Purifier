@@ -7,6 +7,24 @@
 
 DECLARE_CYCLE_STAT(TEXT("VO Compute Velocity"), STAT_VOComputeVelocity, STATGROUP_Game);
 
+UENUM(BlueprintType)
+enum class EMinkowskiShapeType : uint8
+{
+	None,
+	Circle,
+	Capsule,
+	ConvexPolygon,
+	RoundedRectangle,
+};
+
+UENUM(BlueprintType)
+enum class ENeighborType : uint8
+{
+	None,
+	Static,
+	Dynamic,
+};
+
 USTRUCT()
 struct FVONeighborView
 {
@@ -16,27 +34,29 @@ struct FVONeighborView
 	FVector Acc = FVector::ZeroVector;   // world XY
 	float Radius = 0.f;					 // cm
 	float CCT = 0.f;					 // Conservative Collision Time
+	EMinkowskiShapeType ShapeType = EMinkowskiShapeType::None;
+	ENeighborType NeighborType = ENeighborType::None;
 
 	// Shape data: 0 = Circle (uses Pos as center), >0 = Number of vertices in Manager's buffer
 	int32 VerticesOffset = -1;
 	uint8 NumVertices = 0;
 
 	FVONeighborView() = default;
-	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_)
+	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, EMinkowskiShapeType ShapeType_)
 	{
-		Pos = Pos_; Vel = Vel_; Acc = Acc_; Radius = Radius_; CCT = CCT_;
+		Pos = Pos_; Vel = Vel_; Acc = Acc_; Radius = Radius_; CCT = CCT_; ShapeType = ShapeType_;
 	}
 
 	static FVONeighborView CreateCircle(const FVector& Pos, const FVector& Vel, const FVector& Acc, float Radius, float CCT)
 	{
-		FVONeighborView View(Pos, Vel, Acc, Radius, CCT);
+		FVONeighborView View(Pos, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Circle);
 		View.NumVertices = 0;
 		return View;
 	}
 
 	static FVONeighborView CreateCapsule(const FVector& PosA, const FVector& PosB, const FVector& Vel, const FVector& Acc, float Radius, float CCT, TArray<FVector2D>& VertexBuffer)
 	{
-		FVONeighborView View((PosA + PosB) * 0.5f, Vel, Acc, Radius, CCT);
+		FVONeighborView View((PosA + PosB) * 0.5f, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Capsule);
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
 		VertexBuffer.Add(FVector2D(PosA.X, PosA.Y));
@@ -52,6 +72,7 @@ struct FVONeighborView
 		View.CCT = CCT;
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
+		View.ShapeType = EMinkowskiShapeType::Capsule;
 		VertexBuffer.Add(FVector2D(PosA.X, PosA.Y));
 		VertexBuffer.Add(FVector2D(PosB.X, PosB.Y));
 		return View;

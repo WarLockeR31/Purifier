@@ -511,7 +511,8 @@ void UVOManager::GatherNeighbors(
 			FVector NAcc = Cand.AgentComp->GetCachedAcceleration();
 			float NRad = Cand.AgentComp->GetAgentRadius();
 
-			Neis.Emplace(NPos, NVel, NAcc, NRad, Cand.t);
+			Neis.Emplace(NPos, NVel, NAcc, NRad, Cand.t, EMinkowskiShapeType::Circle);
+			Neis.Last().NeighborType = ENeighborType::Dynamic;
 		}
 		else
 		{
@@ -520,6 +521,7 @@ void UVOManager::GatherNeighbors(
 			
 			// TODO: Only 2D
 			Neis.Add(FVONeighborView::CreateSeg(P1, P2, Cand.t, NeighborVerticesBuffer));
+			Neis.Last().NeighborType = ENeighborType::Static;
 			//Neis.Emplace(MidPoint3D, FVector::ZeroVector, FVector::ZeroVector, 0.0f /*Radius*/, Cand.t);
 		}
 	}
