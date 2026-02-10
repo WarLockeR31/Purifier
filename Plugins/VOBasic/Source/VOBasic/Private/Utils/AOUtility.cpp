@@ -693,28 +693,44 @@ namespace
 
 	void FAOConeBuilder::BuildTimeHorizonCap()
 	{
-		/*float t = LastValidT;
+		float t = LastValidT;
 
 		const float InvT = 1.f / t;
 		const float InvSqrT = InvT * InvT;
 
 		const FVector2D CenterLineP = 2 * C * InvSqrT - 2 * Vel * InvT + Acc;
 		const FVector2D GrazeSourceP = -Vel * InvT + Acc;
-		const FVector2D GrazeToCenterOffset = GrazeSourceP - CenterLineP;
+		//const FVector2D GrazeToCenterOffset = GrazeSourceP - CenterLineP;
 
-		const float GrazeToCenterLengthSqr = GrazeToCenterOffset.SizeSquared();
 		const float RTimed = 2 * R * InvSqrT;
-
-		const float RTimedOverGrazeToCenterLen = RTimed * FMath::InvSqrt(GrazeToCenterLengthSqr);
-		const FVector2D GrazeOffsetFromCenter = RTimedOverGrazeToCenterLen * GrazeToCenterOffset;
-
-		const FVector2D TimeHorizonGrazePoint = CenterLineP + GrazeOffsetFromCenter;
+		FVector2D ClosestPointOnCore;
+		switch (Neighbor.ShapeType)
+		{
+		case EMinkowskiShapeType::Circle:
+			ClosestPointOnCore = CenterLineP;
+			break;
+		case EMinkowskiShapeType::Capsule:
+			const FVector2D P1_Local = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
+			const FVector2D P2_Local = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
+			const FVector2D P1_Timed = CenterLineP + P1_Local * (2.f * InvSqrT);
+			const FVector2D P2_Timed = CenterLineP + P2_Local * (2.f * InvSqrT);
+			ClosestPointOnCore = FMath::ClosestPointOnSegment2D(GrazeSourceP, P1_Timed, P2_Timed);
+			break;
+		default:
+			UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Neighbor.ShapeType);
+			break;
+		}
+		
+		FVector2D CoreToSource = GrazeSourceP - ClosestPointOnCore;
+		float DistSq = CoreToSource.SizeSquared();
+		if (DistSq < KINDA_SMALL_NUMBER)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Graze source is too close to the center line!"));
+		}
 
 		// Normalize negate optimization
-		FVector2D TimeHorizonGrazeNormal = GrazeOffsetFromCenter;
-		TimeHorizonGrazeNormal.Normalize();
-		//TimeHorizonGrazeNormal *= -1.f;
-
+		FVector2D TimeHorizonGrazeNormal = CoreToSource * FMath::InvSqrt(DistSq);
+		const FVector2D TimeHorizonGrazePoint = ClosestPointOnCore + TimeHorizonGrazeNormal * RTimed;
 		const float TimeHorizonC = -TimeHorizonGrazeNormal.Dot(TimeHorizonGrazePoint);
 
 		float outT = 0.f;
@@ -736,7 +752,7 @@ namespace
 			/*const FVector2D TimeHorizonR = TimeHorizonL + 2 * (TimeHorizonGrazePoint - TimeHorizonL);
 			PointsR.Add(TimeHorizonR);
 			const FVector2D LastNormR = NormalsR.Last();
-			NormalsR.Add(LastNormR);#1#
+			NormalsR.Add(LastNormR);*/
 		}
 
 		if (AvoidanceMath::FindLineAndSegmentIntersection(
@@ -750,18 +766,9 @@ namespace
 			PointsR.Add(TimeHorizonR);
 			const FVector2D LastNormR = NormalsR.Last();
 			NormalsR.Add(LastNormR);
-		}*/
+		}
 
-		const FVector2D P_L_Start = PointsL[PointsL.Num() - 1];
-		const FVector2D P_R_Start = PointsR[PointsR.Num() - 1];
-		const FVector2D Dir = P_R_Start - P_L_Start;
-		const float DirSq = Dir.SizeSquared();
-
-		const float InvLen = FMath::InvSqrt(DirSq);
-		const FVector2D DirNorm = Dir * InvLen;
-		FVector2D SegNormal(-DirNorm.Y, DirNorm.X);
-
-		OutCone.TimeHorizonSegment.Init(PointsL.Last(), PointsR.Last(), SegNormal/*TimeHorizonGrazeNormal*/);
+		OutCone.TimeHorizonSegment.Init(PointsL.Last(), PointsR.Last(), TimeHorizonGrazeNormal);
 	}
 
 	void FAOConeBuilder::ResolveConvexityAndIntersections(int32& OutFanIndL, int32& OutFanIndR)
