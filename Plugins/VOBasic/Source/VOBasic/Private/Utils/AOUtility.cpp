@@ -87,8 +87,7 @@ namespace
 			LastValidT = Params.TauHorizon;
 		}
 
-		void ClassifyConeTopology();
-		void CalculateTHOverride();
+		void AnalyzeTopology();
 		void SampleBoundaries();
 		void BuildMinTimeSegment();
 		void BuildTimeHorizonCap();
@@ -590,17 +589,13 @@ namespace
 	{
 		FAOConeBuilder Builder(R, C, Vel, Acc, Params, Neighbor, NeighborVertices, OutCone);
 
-		Builder.ClassifyConeTopology();
-		UE_LOG(LogTemp, Warning, TEXT("Pre: %d"), Builder.bIsPreColliding ? 1 : 0);
-		Builder.CalculateTHOverride();
+		Builder.AnalyzeTopology();
+
 		if (Builder.bHasTHOverride)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("TH: %f"), Builder.THEffective);
+			//UE_LOG(LogTemp, Warning, TEXT("TH Override: %f"), Builder.THEffective);
 		}
-		else
-		{
-			Builder.THEffective = Params.TauHorizon;
-		}
+
 		Builder.SampleBoundaries();
 
 		if (Builder.PointsL.Num() == 0)
@@ -610,7 +605,7 @@ namespace
 		Builder.BuildTimeHorizonCap();
 
 		int32 FanIndL = -1, FanIndR = -1;
-		//Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
+		Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
 
 		if (Builder.ValidateShape())
 		{
@@ -700,7 +695,6 @@ namespace
 
 		const FVector2D CenterLineP = 2 * C * InvSqrT - 2 * Vel * InvT + Acc;
 		const FVector2D GrazeSourceP = -Vel * InvT + Acc;
-		//const FVector2D GrazeToCenterOffset = GrazeSourceP - CenterLineP;
 
 		const float RTimed = 2 * R * InvSqrT;
 		FVector2D ClosestPointOnCore;
@@ -723,6 +717,7 @@ namespace
 		
 		FVector2D CoreToSource = GrazeSourceP - ClosestPointOnCore;
 		float DistSq = CoreToSource.SizeSquared();
+		UE_LOG(LogTemp, Warning, TEXT("shape type %d"), (int32)Neighbor.ShapeType);
 		if (DistSq < KINDA_SMALL_NUMBER)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Graze source is too close to the center line!"));
@@ -817,8 +812,8 @@ namespace
 				}
 			};
 
-			if (bIsConcaveR) ProcessSide(PointsL, NormalsL, true, OutFanIndL);
-			if (bIsConcaveL) ProcessSide(PointsR, NormalsR, false, OutFanIndR);
+			/*if (bIsConcaveR) ProcessSide(PointsL, NormalsL, true, OutFanIndL);
+			if (bIsConcaveL) ProcessSide(PointsR, NormalsR, false, OutFanIndR);*/
 		}
 	}
 
@@ -1037,43 +1032,57 @@ namespace
 		}
 	}
 
-	void FAOConeBuilder::ClassifyConeTopology()
+	void FAOConeBuilder::AnalyzeTopology()
 	{
 		bIsConvexL = false;
 		bIsConvexR = false;
 		bIsConcaveL = false;
 		bIsConcaveR = false;
 
-		const double VelSq = Vel.SizeSquared();
-		
-		const double TouchToleranceSq = 1.0f; 
-		
-		bool bIsTouching = false; 
+		const FVector2D V = 0.5f * Vel; 
+		const double VelSq = V.SizeSquared();
+		THEffective = Params.TauHorizon;
 
 		if (VelSq > KINDA_SMALL_NUMBER)
 		{
 			// Find t where x(t) = C + Vel*t is closest to origin
-			const double t_closest = -FVector2D::DotProduct(-C, Vel) / VelSq;
-			const FVector2D P_closest = -C + Vel * t_closest;
-			const double DistSq = P_closest.SizeSquared();
-			const double RSq = R * R;
+			const double t_closest = FVector2D::DotProduct(C, V) / VelSq;
+			const FVector2D P_closest = V * t_closest;
+			const float DistSq = FVector2D::DistSquared(P_closest, C);
 		
-			const float TouchTolerance = 1.f;
-			const float RadiusTolerated = RSq + 2 * R * TouchTolerance + FMath::Square(TouchTolerance);
+			const float Tolerance = 1.f;
+			const float RadiusTolerated = FMath::Square(R + Tolerance);
 	
-			// Check for Touching (Grazing) case
-			/*if (FMath::IsNearlyEqual(DistSq, RSq, TouchToleranceSq))
-			{
-				bIsTouching = true;
-				//bForceHalfplane = true;
-				return;
-			}*/
 			if (DistSq <= RadiusTolerated)
 			{
-				if (t_closest > -KINDA_SMALL_NUMBER)
+				if (t_closest > 0)
+				{
 					bIsPreColliding = true;
+
+					/*const float RadiusSq = FMath::Square(R);
+					const float BackOffsetDist = FMath::Sqrt(FMath::Max(0.0f, RadiusSq - DistSq));
+					const float BackOffsetTime = BackOffsetDist / FMath::Sqrt(VelSq);
+					float T1 = t_closest - BackOffsetTime;
+
+					if (T1 < Params.TauHorizon && T1 > KINDA_SMALL_NUMBER)
+					{
+						THEffective = T1;
+						UE_LOG(LogTemp, Warning, TEXT("%f"), (THEffective));
+						bHasTHOverride = true;
+					}*/
+					
+					// TH Override
+					if (t_closest < Params.TauHorizon)
+					{
+						THEffective = t_closest;
+						UE_LOG(LogTemp, Warning, TEXT("%f"), (THEffective));
+						bHasTHOverride = true;
+					}
+				}
 				else
+				{
 					bIsPostColliding = true;
+				}
 			}
 
 			// Determine Side (Orientation)
@@ -1081,7 +1090,7 @@ namespace
 			{
 				// If CrossZ > 0: C (Obstacle) is to the RIGHT of Vel -> Agent passes LEFT.
 				// If CrossZ < 0: C (Obstacle) is to the LEFT of Vel -> Agent passes RIGHT.
-				const double CrossZ = Vel.X * C.Y - Vel.Y * C.X;
+				const double CrossZ = V.X * C.Y - V.Y * C.X;
 
 				if (CrossZ > 0.f)
 					bIsLeftPassing = true;
@@ -1092,91 +1101,20 @@ namespace
 		else
 		{
 			// Static case
+			// TODO: Delete?
 			if (C.SizeSquared() < R * R)
 				bIsPreColliding = true;
 			else bIsRightPassing = true;
+
+			UE_LOG(LogTemp, Warning, TEXT("Static case!"));
 		}
 
-		// 2. Apply Topology Logic (Prop 3 + Touching Exception)
-		// TODO: Optimize
-		if (bIsRightPassing)
-		{
-			if (bIsTouching)
-			{
-				// "Touches right side" (Agent passes right) -> Left boundary is straight
-				bIsConvexL = false;
-				bIsConcaveL = false;
-			}
-			else
-			{
-				bIsConcaveL = true;
-			}
-		}
-		else if (bIsLeftPassing || bIsPreColliding)
-		{
-			bIsConvexL = true;
-		}
-
-		if (bIsLeftPassing)
-		{
-			if (bIsTouching)
-			{
-				// "Touches left side" (Agent passes left) -> Right boundary is straight
-				bIsConvexR = false;
-				bIsConcaveR = false;
-			}
-			else
-			{
-				bIsConcaveR = true;
-			}
-		}
-		else if (bIsRightPassing || bIsPreColliding)
-		{
-			bIsConvexR = true;
-		}
-		
-		if (bIsPostColliding)
-		{
-			bIsConcaveL = true;
-			bIsConcaveR = true;
-		}
+		// Apply Topology Logic (Prop 3 + Touching Exception)
+		bIsConcaveL = bIsRightPassing || bIsPostColliding;
+		bIsConvexL  = bIsLeftPassing  || bIsPreColliding;
+		bIsConcaveR = bIsLeftPassing  || bIsPostColliding;
+		bIsConvexR  = bIsRightPassing || bIsPreColliding;
 	}
-
-	void FAOConeBuilder::CalculateTHOverride()
-	{
-	    const FVector2D V = 0.5f * Vel; 
-	    
-	    const float VelSq = V.SizeSquared();
-	    if (VelSq < KINDA_SMALL_NUMBER) return;
-	
-	    const FVector2D ToObstacle = C; 
-	
-	    const float t_closest = FVector2D::DotProduct(ToObstacle, V) / VelSq;
-	
-	    const FVector2D ClosestPoint = V * t_closest;
-	
-	    const float DistSq = FVector2D::DistSquared(ClosestPoint, ToObstacle);
-	    const float RadiusSq = FMath::Square(R);
-		
-	    const float TouchTolerance = 1.f;
-		const float RadiusTolerated = RadiusSq + 2 * R * TouchTolerance + FMath::Square(TouchTolerance);
-	
-	    if (DistSq >= RadiusTolerated)
-	    {
-	        return;
-	    }
-	
-	    const float BackOffsetDist = FMath::Sqrt(FMath::Max(0.0f, RadiusSq - DistSq));
-	    const float BackOffsetTime = BackOffsetDist / FMath::Sqrt(VelSq);
-	
-	    float T1 = t_closest - BackOffsetTime;
-	
-	    if (T1 > KINDA_SMALL_NUMBER && T1 < Params.TauHorizon)
-	    {
-	        THEffective = T1;
-	        bHasTHOverride = true;
-	    }
-	}	
 	
 	void PrepareAndSortWorkSegments(
 		const FAOConesSoA& InCones,
