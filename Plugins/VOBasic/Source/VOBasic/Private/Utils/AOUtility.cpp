@@ -1120,64 +1120,56 @@ namespace
 		float HitTime = 0.f;
 		float Tolerance = 1.f;
 
-		if (VelSq > KINDA_SMALL_NUMBER)
+		if (VelSq < KINDA_SMALL_NUMBER)
 		{
-			switch (Neighbor.ShapeType)
-        	{
-        	case EMinkowskiShapeType::Circle:
-				bHitFound = AvoidanceMath::FindRayCircleIntersection(C, V, R, Tolerance, HitTime);
-				break;
-        	case EMinkowskiShapeType::Capsule:
-				const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
-				const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
-				const FVector2D S1 = C + P1;
-				const FVector2D S2 = C + P2;
+			return;
+		}
+
+		switch (Neighbor.ShapeType)
+		{
+		case EMinkowskiShapeType::Circle:
+			bHitFound = AvoidanceMath::FindRayCircleIntersection(C, V, R, Tolerance, HitTime);
+			break;
+		case EMinkowskiShapeType::Capsule:
+			const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
+			const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
+			const FVector2D S1 = C + P1;
+			const FVector2D S2 = C + P2;
 				
-				bHitFound = AvoidanceMath::FindRayCapsuleIntersection(S1, S2, V, R, Tolerance, HitTime);
-				break;
-        	default:
-        	     UE_LOG(LogTemp, Warning, TEXT("Unknown shape type in AnalyzeTopology"));
-        	}
+			bHitFound = AvoidanceMath::FindRayCapsuleIntersection(S1, S2, V, R, Tolerance, HitTime);
+			break;
+		default:
+			UE_LOG(LogTemp, Warning, TEXT("Unknown shape type in AnalyzeTopology"));
+		}
 	
-			if (bHitFound)
+		if (bHitFound)
+		{
+			if (HitTime > 0)
 			{
-				if (HitTime > 0)
+				bIsPreColliding = true;
+				if (HitTime <= Params.TauHorizon)
 				{
-					bIsPreColliding = true;
-					if (HitTime <= Params.TauHorizon)
-					{
-						THEffective = HitTime;
-						bHasTHOverride = true;
-					}
-				}
-				else
-				{
-					bIsPostColliding = true;
+					THEffective = HitTime;
+					bHasTHOverride = true;
 				}
 			}
-
-			// Determine Side (Orientation)
-			if (!bIsPreColliding && !bIsPostColliding)
+			else
 			{
-				// If CrossZ > 0: C (Obstacle) is to the RIGHT of Vel -> Agent passes LEFT.
-				// If CrossZ < 0: C (Obstacle) is to the LEFT of Vel -> Agent passes RIGHT.
-				const double CrossZ = V.X * C.Y - V.Y * C.X;
-
-				if (CrossZ > 0.f)
-					bIsLeftPassing = true;
-				else
-					bIsRightPassing = true;
+				bIsPostColliding = true;
 			}
 		}
-		else
-		{
-			// Static case
-			// TODO: Delete?
-			/*if (C.SizeSquared() < R * R)
-				bIsPreColliding = true;
-			else bIsRightPassing = true;
 
-			UE_LOG(LogTemp, Warning, TEXT("Static case!"));*/
+		// Determine Side (Orientation)
+		if (!bIsPreColliding && !bIsPostColliding)
+		{
+			// If CrossZ > 0: C (Obstacle) is to the RIGHT of Vel -> Agent passes LEFT.
+			// If CrossZ < 0: C (Obstacle) is to the LEFT of Vel -> Agent passes RIGHT.
+			const double CrossZ = V.X * C.Y - V.Y * C.X;
+
+			if (CrossZ > 0.f)
+				bIsLeftPassing = true;
+			else
+				bIsRightPassing = true;
 		}
 
 		// Apply Topology Logic (Prop 3 + Touching Exception)
