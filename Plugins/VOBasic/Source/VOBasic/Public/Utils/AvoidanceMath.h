@@ -47,6 +47,22 @@ namespace AvoidanceMath
 		const float Radius,
 		FVOSegment* OutSegment);
 
+#pragma region RayCasting
+	VOBASIC_API bool FindRayCircleIntersection(
+		const FVector2D& Center,
+		const FVector2D& Vel,
+		float Radius,
+		float Tolerance,
+		float& OutTime);
+
+	VOBASIC_API bool FindRayCapsuleIntersection(
+		const FVector2D& S1,     
+		const FVector2D& S2,     
+		const FVector2D& Vel,    
+		float Radius,
+		float Tolerance,
+		float& OutTime);
+#pragma endregion 
 
 	VOBASIC_API bool FindCircleCircleIntersections(
 		const FAOCircle& C1,

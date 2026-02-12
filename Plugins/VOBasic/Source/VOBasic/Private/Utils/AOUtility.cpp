@@ -425,7 +425,7 @@ namespace
 		{
 			const float A1 = 10.f; // Long-range strength
 			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
-			const float A2 = /*300.f*/10.f;  // Short-range (physical) strength
+			const float A2 = /*300.f*/50.f;  // Short-range (physical) strength
 			const float B2 = /*0.2f*/20.f;  // Short-range range
 			const float Lambda = 1/*0.75f*/; // Anisotropy factor
 
@@ -650,6 +650,7 @@ namespace
 					LastValidT = t;
 					return;
 				}
+				break;
 			default:
 				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Neighbor.ShapeType);
 			}
@@ -1043,39 +1044,38 @@ namespace
 		const double VelSq = V.SizeSquared();
 		THEffective = Params.TauHorizon;
 
+		bool bHitFound = false;
+		float HitTime = 0.f;
+		float Tolerance = 1.f;
+
 		if (VelSq > KINDA_SMALL_NUMBER)
 		{
-			// Find t where x(t) = C + Vel*t is closest to origin
-			const double t_closest = FVector2D::DotProduct(C, V) / VelSq;
-			const FVector2D P_closest = V * t_closest;
-			const float DistSq = FVector2D::DistSquared(P_closest, C);
-		
-			const float Tolerance = 1.f;
-			const float RadiusTolerated = FMath::Square(R + Tolerance);
+			switch (Neighbor.ShapeType)
+        	{
+        	case EMinkowskiShapeType::Circle:
+				bHitFound = AvoidanceMath::FindRayCircleIntersection(C, V, R, Tolerance, HitTime);
+				break;
+        	case EMinkowskiShapeType::Capsule:
+				const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
+				const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
+				const FVector2D S1 = C + P1;
+				const FVector2D S2 = C + P2;
+				
+				bHitFound = AvoidanceMath::FindRayCapsuleIntersection(S1, S2, V, R, Tolerance, HitTime);
+				break;
+        	default:
+        	     UE_LOG(LogTemp, Warning, TEXT("Unknown shape type in AnalyzeTopology"));
+        	}
 	
-			if (DistSq <= RadiusTolerated)
+			if (bHitFound)
 			{
-				if (t_closest > 0)
+				UE_LOG(LogTemp, Warning, TEXT("HitTime: %f"), HitTime);
+				if (HitTime > 0)
 				{
 					bIsPreColliding = true;
-
-					/*const float RadiusSq = FMath::Square(R);
-					const float BackOffsetDist = FMath::Sqrt(FMath::Max(0.0f, RadiusSq - DistSq));
-					const float BackOffsetTime = BackOffsetDist / FMath::Sqrt(VelSq);
-					float T1 = t_closest - BackOffsetTime;
-
-					if (T1 < Params.TauHorizon && T1 > KINDA_SMALL_NUMBER)
+					if (HitTime <= Params.TauHorizon)
 					{
-						THEffective = T1;
-						UE_LOG(LogTemp, Warning, TEXT("%f"), (THEffective));
-						bHasTHOverride = true;
-					}*/
-					
-					// TH Override
-					if (t_closest < Params.TauHorizon)
-					{
-						THEffective = t_closest;
-						UE_LOG(LogTemp, Warning, TEXT("%f"), (THEffective));
+						THEffective = HitTime;
 						bHasTHOverride = true;
 					}
 				}
@@ -1102,11 +1102,11 @@ namespace
 		{
 			// Static case
 			// TODO: Delete?
-			if (C.SizeSquared() < R * R)
+			/*if (C.SizeSquared() < R * R)
 				bIsPreColliding = true;
 			else bIsRightPassing = true;
 
-			UE_LOG(LogTemp, Warning, TEXT("Static case!"));
+			UE_LOG(LogTemp, Warning, TEXT("Static case!"));*/
 		}
 
 		// Apply Topology Logic (Prop 3 + Touching Exception)
@@ -1114,6 +1114,8 @@ namespace
 		bIsConvexL  = bIsLeftPassing  || bIsPreColliding;
 		bIsConcaveR = bIsLeftPassing  || bIsPostColliding;
 		bIsConvexR  = bIsRightPassing || bIsPreColliding;
+
+		UE_LOG(LogTemp, Warning, TEXT("IsConcaveL: %d, IsConvexL: %d, IsConcaveR: %d, IsConvexR: %d"), bIsConcaveL, bIsConvexL, bIsConcaveR, bIsConvexR);
 	}
 	
 	void PrepareAndSortWorkSegments(

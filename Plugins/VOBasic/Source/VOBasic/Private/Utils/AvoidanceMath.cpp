@@ -246,6 +246,115 @@ bool AvoidanceMath::TryFindSegmentOfRayInCircle(
 	}
 }
 
+bool AvoidanceMath::FindRayCircleIntersection(
+	const FVector2D& Center,
+	const FVector2D& Vel,
+	float Radius,
+	float Tolerance,
+	float& OutTime)
+{
+	const double VelSq = Vel.SizeSquared();
+	if (VelSq < KINDA_SMALL_NUMBER)
+		return false;
+
+	const double t_closest = FVector2D::DotProduct(Center, Vel) / VelSq;
+
+	const FVector2D P_closest = Vel * t_closest;
+	const float DistSq = FVector2D::DistSquared(P_closest, Center);
+    
+	if (DistSq > FMath::Square(Radius + Tolerance)) 
+	{
+		return false;
+	}
+
+	const float BackOffsetDist = FMath::Sqrt(FMath::Max(0.0f, FMath::Square(Radius) - DistSq));
+	const float InvSpeed = FMath::InvSqrt(VelSq);
+    
+	OutTime = t_closest - (BackOffsetDist * InvSpeed);
+    
+	return true;
+}
+
+bool AvoidanceMath::FindRayCapsuleIntersection(
+	const FVector2D& S1,
+	const FVector2D& S2,
+	const FVector2D& Vel,
+	float Radius,
+	float Tolerance,
+	float& OutTime)
+{
+	const double VelSq = Vel.SizeSquared();
+    if (VelSq < KINDA_SMALL_NUMBER)
+    	return false;
+
+    const FVector2D Edge = S2 - S1;
+    const double EdgeLenSq = Edge.SizeSquared();
+    
+    float BestT = MAX_flt;
+    bool bFound = false;
+
+	float R = Radius + Tolerance;
+
+    // Rectangle
+    if (EdgeLenSq > KINDA_SMALL_NUMBER)
+    {
+        const FVector2D EdgeNormal(-Edge.Y, Edge.X);
+        const double DistProj = -FVector2D::DotProduct(S1, EdgeNormal);
+        const double VelProj = FVector2D::DotProduct(Vel, EdgeNormal);
+
+        // Parallel check
+        if (FMath::Abs(VelProj) > KINDA_SMALL_NUMBER)
+        {
+            // Take the closest 'wall'
+            const float Sign = (DistProj > 0) ? 1.f : -1.f;
+            const float TargetDist = Sign * R * FMath::Sqrt(EdgeNormal.SizeSquared());
+            
+            // Time of intersection
+            const float t_edge = (TargetDist - DistProj) / VelProj;
+
+            // Segment check
+            const FVector2D HitPos = Vel * t_edge;
+            const float t_proj = FVector2D::DotProduct(HitPos - S1, Edge) / EdgeLenSq;
+            
+            if (t_proj >= 0.f && t_proj <= 1.f)
+            {
+                BestT = t_edge;
+                bFound = true;
+            }
+        }
+    }
+
+    // Corners (spheres)
+    auto CheckVertex = [&](const FVector2D& Vert)
+    {
+        float B = -2.f * FVector2D::DotProduct(Vel, Vert);
+        float C_Val = Vert.SizeSquared() - FMath::Square(R);
+        float Discr = FMath::Square(B) - 4.f * VelSq * C_Val;
+
+        if (Discr >= 0.f)
+        {
+            float t = (-B - FMath::Sqrt(Discr)) / (2.f * VelSq);
+            
+            if (t < BestT)
+            {
+                BestT = t;
+                bFound = true;
+            }
+        }
+    };
+
+    CheckVertex(S1);
+    CheckVertex(S2);
+
+    if (bFound)
+    {
+        OutTime = BestT;
+        return true;
+    }
+
+    return false;
+}
+
 bool AvoidanceMath::FindCircleCircleIntersections(
 	const FAOCircle& C1, const FAOCircle& C2, FVector2D& OutP1, FVector2D& OutP2)
 {
