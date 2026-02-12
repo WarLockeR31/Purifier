@@ -423,12 +423,21 @@ namespace
 		FVector2D TotalRepulsion = FVector2D::ZeroVector;
 		if (Neis.Num() > 0)
 		{
+			// Agents params
 			const float A1 = 10.f; // Long-range strength
 			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
-			const float A2 = /*300.f*/50.f;  // Short-range (physical) strength
+			const float A2 = /*300.f*/20.f;  // Short-range (physical) strength
 			const float B2 = /*0.2f*/20.f;  // Short-range range
 			const float Lambda = 1/*0.75f*/; // Anisotropy factor
 
+			// Static obstacles params
+			const float A = 50.f;
+			const float B = 20.f;
+
+			const float VertexMergeThreshold = 10.0f;
+			const float VertexMergeThresholdSq = FMath::Square(VertexMergeThreshold);
+
+			TArray<FVector2D, TInlineAllocator<16>> ProcessedVertices;
 			
 			FVector2D ActorVel2D = FVector2D(CurVel);
 			float ActorVelLen = ActorVel2D.Size();
@@ -440,6 +449,8 @@ namespace
 				float d_ij;
 				// Unit vector from J (neighbor) to I (robot)
 				FVector2D e_ij;
+				
+				bool bShouldApplyForce = false;
 
 				switch (Nei.ShapeType)
 				{
@@ -447,48 +458,109 @@ namespace
 					{
 						FVector2D ToActor = FVector2D(ActorPos.X - Nei.Pos.X, ActorPos.Y - Nei.Pos.Y);
 						float DistCentersSq = ToActor.SizeSquared();
-						float DistCenters = FMath::Sqrt(DistCentersSq);
-					
-						if (DistCentersSq < KINDA_SMALL_NUMBER) continue;
-						// TODO: Think?
-						e_ij = ToActor / DistCenters; 
-						d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+
+						if (DistCentersSq > KINDA_SMALL_NUMBER)
+						{
+							float DistCenters = FMath::Sqrt(DistCentersSq);
+							e_ij = ToActor / DistCenters; 
+							d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+							bShouldApplyForce = true;
+						}
 						break;
 					}
 				case EMinkowskiShapeType::Capsule:
-					{
+					{						
 						const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
-						FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(ActorPos), NeiVertices[Nei.VerticesOffset], NeiVertices[Nei.VerticesOffset + 1]);
-						FVector2D ToActor = FVector2D(ActorPos.X - ClosestPoint.X, ActorPos.Y - ClosestPoint.Y);
-						float DistSq = ToActor.SizeSquared();
-						float Dist = FMath::Sqrt(DistSq);
-					
-						if (DistSq < KINDA_SMALL_NUMBER) continue;
-					
-						e_ij = ToActor / Dist;
-						d_ij = Dist - (Params.AgentRadius + Nei.Radius);
-						break;
+                		FVector2D V0 = NeiVertices[Nei.VerticesOffset];
+                		FVector2D V1 = NeiVertices[Nei.VerticesOffset + 1];
+		
+                		FVector2D SegDir = V1 - V0;
+                		float SegLenSq = SegDir.SizeSquared();
+                		
+                		FVector2D ActorPos2D = FVector2D(ActorPos);
+                		FVector2D V0ToActor = ActorPos2D - V0;
+		
+                		float t = 0.f;
+                		if (SegLenSq > KINDA_SMALL_NUMBER)
+                		{
+                		    t = FVector2D::DotProduct(V0ToActor, SegDir) / SegLenSq;
+                		}
+                		
+                		float t_clamped = FMath::Clamp(t, 0.f, 1.f);
+                		FVector2D ClosestPoint = V0 + SegDir * t_clamped;
+
+						// Vertex deduplication
+                		bool bIsVertex = (t_clamped < KINDA_SMALL_NUMBER || t_clamped > (1.0f - KINDA_SMALL_NUMBER));
+		
+                		if (bIsVertex)
+                		{
+                		    bool bAlreadyProcessed = false;
+                		    for (const FVector2D& ProcessedV : ProcessedVertices)
+                		    {
+                		        if (FVector2D::DistSquared(ProcessedV, ClosestPoint) < VertexMergeThresholdSq)
+                		        {
+                		            bAlreadyProcessed = true;
+                		            break;
+                		        }
+                		    }
+		
+                		    if (bAlreadyProcessed)
+                		    {
+                		        continue; 
+                		    }
+                		    else
+                		    {
+                		        ProcessedVertices.Add(ClosestPoint);
+                		    }
+                		}
+		
+                		FVector2D ToActor = ActorPos2D - ClosestPoint;
+                		float DistSq = ToActor.SizeSquared();
+		
+                		if (DistSq > KINDA_SMALL_NUMBER)
+                		{
+                		   float Dist = FMath::Sqrt(DistSq);
+                		   e_ij = ToActor / Dist;
+                		   d_ij = Dist - (Params.AgentRadius + Nei.Radius);
+                		   bShouldApplyForce = true;
+                		}
+                		break;
 					}
 				default:
 					UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Nei.ShapeType);
 				}
 				
-
-				// Anisotropy w(phi)
-				// cos(phi) = -e_ij dot (v_i / |v_i|)
-				float CosPhi = -FVector2D::DotProduct(e_ij, ActorVelDir);
-				
-				// w(phi) = lambda + (1-lambda)*(1+cos(phi))/2
-				float W_Phi = Lambda + (1.f - Lambda) * (0.5f * (1.f + CosPhi));
-
-				// Forces
-				float ForceLong = A1 * FMath::Exp(-d_ij / B1) * W_Phi;
-				float ForceShort = A2 * FMath::Exp(-d_ij / B2);
-
-				FVector2D Repulsion = e_ij * (ForceLong + ForceShort);
-				if (Nei.NeighborType == ENeighborType::Static)
-					Repulsion *= 2;
-				TotalRepulsion += Repulsion;
+				if (bShouldApplyForce)
+				{
+					FVector2D Repulsion = FVector2D::ZeroVector;
+					switch (Nei.NeighborType)
+					{
+					case ENeighborType::Static:
+						{
+							Repulsion = e_ij * (A * FMath::Exp(-d_ij / B));
+						}
+						break;
+					case ENeighborType::Dynamic:
+						{
+							// Anisotropy w(phi)
+							// cos(phi) = -e_ij dot (v_i / |v_i|)
+							float CosPhi = -FVector2D::DotProduct(e_ij, ActorVelDir);
+					
+							// w(phi) = lambda + (1-lambda)*(1+cos(phi))/2
+							float W_Phi = Lambda + (1.f - Lambda) * (0.5f * (1.f + CosPhi));
+					
+							// Forces
+							float ForceLong = A1 * FMath::Exp(-d_ij / B1) * W_Phi;
+							float ForceShort = A2 * FMath::Exp(-d_ij / B2);
+					
+							Repulsion = e_ij * (ForceLong + ForceShort);
+						}
+					default:
+						UE_LOG(LogTemp, Warning, TEXT("Unknown neighbor type %d"), (int32)Nei.NeighborType);
+					}
+					
+					TotalRepulsion += Repulsion;
+				}
 			}
 
 			DesiredAcc += TotalRepulsion;
@@ -718,7 +790,7 @@ namespace
 		
 		FVector2D CoreToSource = GrazeSourceP - ClosestPointOnCore;
 		float DistSq = CoreToSource.SizeSquared();
-		UE_LOG(LogTemp, Warning, TEXT("shape type %d"), (int32)Neighbor.ShapeType);
+		
 		if (DistSq < KINDA_SMALL_NUMBER)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Graze source is too close to the center line!"));
@@ -1069,7 +1141,6 @@ namespace
 	
 			if (bHitFound)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("HitTime: %f"), HitTime);
 				if (HitTime > 0)
 				{
 					bIsPreColliding = true;
@@ -1115,7 +1186,7 @@ namespace
 		bIsConcaveR = bIsLeftPassing  || bIsPostColliding;
 		bIsConvexR  = bIsRightPassing || bIsPreColliding;
 
-		UE_LOG(LogTemp, Warning, TEXT("IsConcaveL: %d, IsConvexL: %d, IsConcaveR: %d, IsConvexR: %d"), bIsConcaveL, bIsConvexL, bIsConcaveR, bIsConvexR);
+		//UE_LOG(LogTemp, Warning, TEXT("IsConcaveL: %d, IsConvexL: %d, IsConcaveR: %d, IsConvexR: %d"), bIsConcaveL, bIsConvexL, bIsConcaveR, bIsConvexR);
 	}
 	
 	void PrepareAndSortWorkSegments(
