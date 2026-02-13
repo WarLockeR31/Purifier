@@ -46,6 +46,8 @@ static TAutoConsoleVariable<int32> CVarVODebugShowPaths(
 	TEXT("Save and show paths"), ECVF_Default);
 #endif
 
+LLM_DEFINE_TAG(VOAO);
+
 void UVOManager::RegisterAgent(UVOFollowingComponent* Comp)
 {
 	// TODO: Check
@@ -87,6 +89,9 @@ void UVOManager::UnregisterAgent(UVOFollowingComponent* Comp)
 
 void UVOManager::Tick(float DeltaTime)
 {
+	LLM_SCOPE_BYTAG(VOAO);
+	TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick);
+
 	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
 	{
 		UVOFollowingComponent* Comp = It.Get();
@@ -98,49 +103,52 @@ void UVOManager::Tick(float DeltaTime)
 		int32 NumActive = DetourCrowd->cacheActiveAgents();
 		if (NumActive)
 		{
-			MyNavData->BeginBatchQuery();
-
-			for (auto It = ActiveAgents.CreateIterator(); It; ++It)
 			{
-				// collect position and velocity
-				FCrowdAgentData& AgentData = It.Value();
-				if (AgentData.IsValid())
+				TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick_Detour);
+				MyNavData->BeginBatchQuery();
+
+				for (auto It = ActiveAgents.CreateIterator(); It; ++It)
 				{
-					// Sync indices
-					if (UVOFollowingComponent* VOComp = Cast<UVOFollowingComponent>(It.Key()))
+					// collect position and velocity
+					FCrowdAgentData& AgentData = It.Value();
+					if (AgentData.IsValid())
 					{
-						VOComp->DetourAgentIndex = AgentData.AgentIndex;
-					}
+						// Sync indices
+						if (UVOFollowingComponent* VOComp = Cast<UVOFollowingComponent>(It.Key()))
+						{
+							VOComp->DetourAgentIndex = AgentData.AgentIndex;
+						}
 					
-					PrepareAgentStep(It.Key(), AgentData, DeltaTime);
+						PrepareAgentStep(It.Key(), AgentData, DeltaTime);
+					}
 				}
-			}
 
-			// corridor update from previous step
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepCorridorTime);
-				DetourCrowd->updateStepCorridor(DeltaTime, DetourAgentDebug);
-			}
+				// corridor update from previous step
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepCorridorTime);
+					DetourCrowd->updateStepCorridor(DeltaTime, DetourAgentDebug);
+				}
 
-			// regular steps
-			if (bAllowPathReplan)
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepPathsTime);
-				DetourCrowd->updateStepPaths(DeltaTime, DetourAgentDebug);
-			}
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepProximityTime);
-				DetourCrowd->updateStepProximityData(DeltaTime, DetourAgentDebug);
-				PostProximityUpdate();
-			}
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNextPointTime);
-				DetourCrowd->updateStepNextMovePoint(DeltaTime, DetourAgentDebug);
-				PostMovePointUpdate();
-			}
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepSteeringTime);
-				DetourCrowd->updateStepSteering(DeltaTime, DetourAgentDebug);
+				// regular steps
+				if (bAllowPathReplan)
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepPathsTime);
+					DetourCrowd->updateStepPaths(DeltaTime, DetourAgentDebug);
+				}
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepProximityTime);
+					DetourCrowd->updateStepProximityData(DeltaTime, DetourAgentDebug);
+					PostProximityUpdate();
+				}
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNextPointTime);
+					DetourCrowd->updateStepNextMovePoint(DeltaTime, DetourAgentDebug);
+					PostMovePointUpdate();
+				}
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepSteeringTime);
+					DetourCrowd->updateStepSteering(DeltaTime, DetourAgentDebug);
+				}
 			}
 			{
 				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepAvoidanceTime);
@@ -154,12 +162,17 @@ void UVOManager::Tick(float DeltaTime)
 				DetourCrowd->updateStepMove(DeltaTime, DetourAgentDebug);
 			}*/
 			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepComponentsTime);
-				UpdateAgentPaths();
-			}
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNavLinkTime);
-				DetourCrowd->updateStepOffMeshVelocity(DeltaTime, DetourAgentDebug);
+				TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick_AfterAO);
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepComponentsTime);
+					UpdateAgentPaths();
+				}
+				{
+					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNavLinkTime);
+					DetourCrowd->updateStepOffMeshVelocity(DeltaTime, DetourAgentDebug);
+				}
+
+				MyNavData->FinishBatchQuery();
 			}
 
 			// velocity updates
@@ -178,8 +191,6 @@ void UVOManager::Tick(float DeltaTime)
 					}
 				}*/
 			}
-
-			MyNavData->FinishBatchQuery();
 
 #if WITH_EDITOR
 			// normalize samples only for debug drawing purposes
@@ -207,6 +218,7 @@ void UVOManager::Tick(float DeltaTime)
 
 void UVOManager::UpdateAvoidance()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::UpdateAvoidance);
 	for (int32 i = Agents.Num() - 1; i >= 0; --i)
 	{
 		auto* Comp = Agents[i].Get();
@@ -225,15 +237,21 @@ void UVOManager::UpdateAvoidance()
 		NeighborVerticesBuffer.Reset();
 		TArray<FVONeighborView> Neis;
 		int MaxNeisCount = 5;
-		GatherNeighbors(Comp, Params, Neis);
-
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::GatherNeighbors);
+			GatherNeighbors(Comp, Params, Neis);
+		}
+		
 		// Prepare Buffers
-		PrepareArrays(Neis.Num());
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::PrepareArrays);
+			PrepareArrays(Neis.Num());
+		}
 
 		// VELOCITY OBSTACLE
 		if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::VelocityObstacle)
 		{
-			SCOPE_CYCLE_COUNTER(STAT_VOComputeVelocity);
+			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::VO);
 
 			// Calculate Desired Velocity based on Goal
 			FVector DesiredVel = FVector::ZeroVector;
@@ -298,6 +316,7 @@ void UVOManager::UpdateAvoidance()
 		// ACCELERATION OBSTACLE
 		if (Comp->GetAvoidanceStyle() == EAvoidanceStyle::AccelerationObstacle)
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::AO);
 			FVector TargetPos = FVector::ZeroVector;
 			const dtCrowdAgent* dtAgent = DetourCrowd->getAgent(Comp->DetourAgentIndex);
 			if (dtAgent->targetState == DT_CROWDAGENT_TARGET_NONE)

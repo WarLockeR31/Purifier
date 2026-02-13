@@ -168,6 +168,8 @@ namespace AOUtility
 {
 	FVector ComputeAcceleration(const FAOCalculationContext& Ctx)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAcceleration);
+		
 		if (Ctx.Cones) Ctx.Cones->Reset();
 
 		BuildCones(Ctx);
@@ -316,6 +318,8 @@ namespace
 {
 	void BuildCones(const FAOCalculationContext& Ctx)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AO::BuildCones);
+		
 		const bool bUseRVO = CVarAOUseRVO.GetValueOnAnyThread() != 0;
 		const FVector2D CurAcc = (Ctx.Comp) ? FVector2D(Ctx.Comp->GetCachedAcceleration()) : FVector2D::ZeroVector;
 		
@@ -352,6 +356,8 @@ namespace
 
 	void ProcessIntersections(const FAOCalculationContext& Ctx)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AO::ProcessIntersections);
+		
 		auto& Cones = *Ctx.Cones;
 		auto& WorkSegments = *Ctx.WorkSegments;
 		auto& SideIntersections = *Ctx.SideIntersections;
@@ -359,19 +365,35 @@ namespace
 
 		int32 TotalSides = 0;
 
-		PrepareAndSortWorkSegments(Cones, WorkSegments, TotalSides);
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ProcessIntersections::PrepareAndSortWorkSegments);
+			PrepareAndSortWorkSegments(Cones, WorkSegments, TotalSides);
+		}
 
 		SideIntersections.SetNum(TotalSides);
 		for (int32 i = 0; i < TotalSides; ++i)
 			SideIntersections[i].Reset();
 
-		CollectIntersections(WorkSegments, SideIntersections);
-		SortSideIntersections(SideIntersections);
-		ClassifySegments(Cones, SideIntersections, *Ctx.Params, Ctx.CurrentVelocity, OutsideSegments);
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ProcessIntersections::CollectIntersections);
+			CollectIntersections(WorkSegments, SideIntersections);
+		}
+		
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ProcessIntersections::SortSideIntersections);
+			SortSideIntersections(SideIntersections);
+		}
+		
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ProcessIntersections::ClassifySegments);
+			ClassifySegments(Cones, SideIntersections, *Ctx.Params, Ctx.CurrentVelocity, OutsideSegments);
+		}
 	}
 
 	FVector2D SelectBestCandidate(const FAOCalculationContext& Ctx)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AO::SelectBestCandidate);
+		
 		const FVector2D CurAcc = (Ctx.Comp) ? FVector2D(Ctx.Comp->GetCachedAcceleration()) : FVector2D::ZeroVector;
 		const auto& Neis = *Ctx.Neis;
 		const auto& Params = *Ctx.Params;
@@ -400,6 +422,8 @@ namespace
 		FVector2D TargetPosRel = FVector2D(TargetPos - ActorPos); // For parabola
 		if (!TargetPosRel.IsZero())
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::SelectBestCandidate::DesiredAccCalculation);
+			
 			FVector2D VelRel = FVector2D(CurVel); // For parabola
 			FVector2D TargetAcc = FVector2D::Zero(); // For parabola
 			double MaxAcc = Params.MaxAcceleration; // For circle 1
@@ -423,6 +447,8 @@ namespace
 		FVector2D TotalRepulsion = FVector2D::ZeroVector;
 		if (Neis.Num() > 0)
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::SelectBestCandidate::SFMRepulsionCalculation);
+			
 			// Agents params
 			const float A1 = 10.f; // Long-range strength
 			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
@@ -585,6 +611,8 @@ namespace
 
 		auto EvaluatePoint = [&](const FVector2D& P)
 		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::SelectBestCandidate::EvaluatePoint);
+			
 			OutCandidates.Add(P);
 			int32 CurrentIdx = OutCandidates.Num() - 1;
 
@@ -659,31 +687,51 @@ namespace
 		const TArray<FVector2D>& NeighborVertices,
 		FAOCone& OutCone)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone);
+		
 		FAOConeBuilder Builder(R, C, Vel, Acc, Params, Neighbor, NeighborVertices, OutCone);
 
-		Builder.AnalyzeTopology();
-
-		if (Builder.bHasTHOverride)
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::AnalyzeTopology);
+			Builder.AnalyzeTopology();
+		}
+		/*if (Builder.bHasTHOverride)
 		{
 			//UE_LOG(LogTemp, Warning, TEXT("TH Override: %f"), Builder.THEffective);
-		}
+		}*/
 
-		Builder.SampleBoundaries();
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::SampleBoundaries);
+			Builder.SampleBoundaries();
+		}
 
 		if (Builder.PointsL.Num() == 0)
 			return false;
+
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::BuildMinTimeSegment);
+			Builder.BuildMinTimeSegment(); 
+		}
 		
-		Builder.BuildMinTimeSegment(); 
-		Builder.BuildTimeHorizonCap();
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::BuildTimeHorizonCap);
+			Builder.BuildTimeHorizonCap();
+		}
 
 		int32 FanIndL = -1, FanIndR = -1;
-		Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
-
-		if (Builder.ValidateShape())
 		{
-			Builder.Triangulate(FanIndL, FanIndR);
-			Builder.FinalizeSegments();
-			return true;
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::ResolveConvexityAndIntersections);
+			Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
+		}
+
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::Validation&Finalization);
+			if (Builder.ValidateShape())
+			{
+				Builder.Triangulate(FanIndL, FanIndR);
+				Builder.FinalizeSegments();
+				return true;
+			}
 		}
 		
 		return false;
@@ -1147,7 +1195,7 @@ namespace
 			if (HitTime > 0)
 			{
 				bIsPreColliding = true;
-				if (HitTime <= Params.TauHorizon)
+				//if (HitTime <= Params.TauHorizon)
 				{
 					THEffective = HitTime;
 					bHasTHOverride = true;

@@ -6,6 +6,7 @@
 #include "VOManager.generated.h"
 
 DECLARE_CYCLE_STAT(TEXT("VO Compute Velocity"), STAT_VOComputeVelocity, STATGROUP_Game);
+LLM_DECLARE_TAG(VOAO);
 
 UENUM(BlueprintType)
 enum class EMinkowskiShapeType : uint8
