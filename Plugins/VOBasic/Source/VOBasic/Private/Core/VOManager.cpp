@@ -9,6 +9,8 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "NavMesh/RecastHelpers.h"
+#include "NavMesh/RecastNavMesh.h"
+#include "NavMesh/RecastQueryFilter.h"
 #include "Runtime/Navmesh/Public/DetourCrowd/DetourCrowd.h"
 #include "Stats/Stats.h"
 #include "Utils/AvoidanceMath.h"
@@ -48,43 +50,196 @@ static TAutoConsoleVariable<int32> CVarVODebugShowPaths(
 
 LLM_DEFINE_TAG(VOAO);
 
-void UVOManager::RegisterAgent(UVOFollowingComponent* Comp)
+void UVOManager::OnNavDataRegistered(ANavigationData& NavDataInstance)
 {
-	// TODO: Check
-	// Super::RegisterAgent(Comp); // Base is called by Component's OnRegister via UCrowdFollowingComponent
-
-	if (Comp->VOManagerIndex != INDEX_NONE)
-	{
+	ARecastNavMesh* RecastNavMesh = Cast<ARecastNavMesh>(&NavDataInstance);
+	if (RecastNavMesh == nullptr)
 		return;
-	}
 
-	Agents.Add(Comp);
-	// TODO: Friend?
-	Comp->VOManagerIndex = Agents.Num() - 1;
+	dtNavMesh* DetourMesh = RecastNavMesh->GetRecastMesh();
+	if (DetourMesh == nullptr)
+		return;
+	
+	dtCrowd* NewDetourCrowd = dtAllocCrowd();
+
+	// TODO: Remove hardcode
+	const int32 MaxAgents = 50;
+	const float MaxAgentRadius = RecastNavMesh->AgentRadius;
+
+	if (NewDetourCrowd->init(MaxAgents, MaxAgentRadius, DetourMesh))
+	{
+		// TODO: Remove hardcode
+		NewDetourCrowd->initAvoidance(6, 8, 1);
+
+		FCrowdContext Context;
+		Context.Crowd = NewDetourCrowd;
+		ContextMap.Add(&NavDataInstance, Context);
+	}
+	else
+	{
+		dtFreeCrowd(NewDetourCrowd);
+	}
 }
 
-void UVOManager::UnregisterAgent(UVOFollowingComponent* Comp)
+void UVOManager::OnNavDataUnregistered(ANavigationData& NavDataInstance)
 {
-	int32 Idx = Comp->VOManagerIndex;
-	if (Idx == INDEX_NONE)
+	FCrowdContext& Context = ContextMap.FindChecked(&NavDataInstance);
+
+	UE_LOG(LogTemp, Log, TEXT("CrowdManager: Unregistering NavMesh %s"), *NavDataInstance.GetName());
+
+	for (int32 i = GlobalAgentList.Num() - 1; i >= 0; --i)
 	{
-		return;
+		if (GlobalAgentList[i].NavData == &NavDataInstance)
+		{
+			GlobalAgentList.RemoveAtSwap(i);
+		}
 	}
 
-	UVOFollowingComponent* LastComp = Agents.Last().Get();
-
-	Agents.RemoveAtSwap(Idx, EAllowShrinking::No);
-
-	if (LastComp && LastComp != Comp)
+	if (Context.Crowd)
 	{
-		LastComp->VOManagerIndex = Idx;
+		dtFreeCrowd(Context.Crowd);
+		Context.Crowd = nullptr;
 	}
 
-	Comp->VOManagerIndex = INDEX_NONE;
-	Comp->DetourAgentIndex = INDEX_NONE;
+	/*if (Context->NavQuery)
+	{
+		dtFreeNavMeshQuery(Context->NavQuery);
+		Context->NavQuery = nullptr;
+	}*/
 
-	// TODO: Check
-	// Super::UnregisterAgent(Comp); // Base is called by Component's OnUnregister
+	ContextMap.Remove(&NavDataInstance);
+}
+
+void UVOManager::RegisterAgent(UVOFollowingComponent* Agent)
+{
+	check(Agent != nullptr);
+	ANavigationData* NavData = nullptr;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	float AgentRadius = Agent->GetAgentRadius();
+	// TODO: Replace hardcode
+	float AgentHeight = 400.f;
+	FVector Extent = FVector(AgentRadius, AgentRadius, AgentHeight * 0.5f);
+
+	ANavigationData* BestNavData = NavSys->GetNavDataForProps(
+		FNavAgentProperties(AgentRadius, AgentHeight),
+		Agent->GetOwnerLocation(),
+		Extent
+	);
+
+	FCrowdContext& Context = ContextMap.FindChecked(BestNavData);
+
+	dtCrowdAgentParams Params;
+	FMemory::Memzero(&Params, sizeof(Params));
+
+	Params.radius = AgentRadius;
+	Params.height = AgentHeight;
+	Params.maxAcceleration = Agent->GetEffectiveParams().MaxAcceleration;
+	Params.maxSpeed = Agent->GetEffectiveParams().MaxSpeed;
+	Params.collisionQueryRange = AgentRadius * 12.0f; // TODO: check
+	Params.pathOptimizationRange = AgentRadius * 30.f;
+	Params.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OBSTACLE_AVOIDANCE;
+	// TODO: Add path optimization counter
+
+	// TODO: Maybe GetCrowdAgentLocation()
+
+	// Add agent in detour
+	FVector Loc = Agent->GetOwnerLocation();
+	FVector RecastLocVec = Unreal2RecastPoint(Loc);
+	dtReal RecastLoc[3];
+	RecastLoc[0] = RecastLocVec.X;
+	RecastLoc[1] = RecastLocVec.Y;
+	RecastLoc[2] = RecastLocVec.Z;
+
+	const dtQueryFilter* Filter = Context.Crowd->getFilter(0);
+	int32 DetourIdx = Context.Crowd->addAgent(RecastLoc, Params, Filter);
+
+	if (DetourIdx != -1)
+	{
+		FGlobalAgentEntry Entry;
+		Entry.Agent = Agent;
+		Entry.NavData = BestNavData;
+		Entry.DetourAgentIndex = DetourIdx;
+
+		GlobalAgentList.Add(Entry);
+		Agent->VOManagerIndex = GlobalAgentList.Num() - 1;
+	}
+}
+
+void UVOManager::UnregisterAgent(UVOFollowingComponent* Agent)
+{
+	check(Agent != nullptr);
+
+	int32 IdxToRemove = Agent->VOManagerIndex;
+	FGlobalAgentEntry& Entry = GlobalAgentList[IdxToRemove];
+
+	FCrowdContext Context = ContextMap.FindChecked(Entry.NavData);
+
+	check(Context.Crowd);
+	Context.Crowd->removeAgent(Entry.DetourAgentIndex);
+	
+	GlobalAgentList.RemoveAtSwap(IdxToRemove);
+	
+	GlobalAgentList[IdxToRemove].Agent->VOManagerIndex = IdxToRemove;
+
+	Agent->VOManagerIndex = INDEX_NONE;
+}
+
+bool UVOManager::SetAgentMovePath(const UVOFollowingComponent* AgentComponent, const FNavMeshPath* Path, int32 PathSectionStart, int32 PathSectionEnd, const FVector& PathSectionEndLocation) const
+{
+	bool bSuccess = false;
+
+#if WITH_RECAST
+	if (!GlobalAgentList.IsValidIndex(AgentComponent->VOManagerIndex))
+		return false;
+	const FGlobalAgentEntry& Entry = GlobalAgentList[AgentComponent->VOManagerIndex];
+	const int32 AgentIndex = Entry.DetourAgentIndex;
+
+	// Get Navmesh
+	const FCrowdContext* ContextPtr = ContextMap.Find(Entry.NavData);
+	if (!ContextPtr)
+		return false;
+
+	dtCrowd* DetourCrowd = ContextPtr->Crowd;
+	if (!DetourCrowd)
+		return false;
+	
+	ARecastNavMesh* RecastNavData = Cast<ARecastNavMesh>(Entry.NavData);
+	if (!RecastNavData)
+		return false;
+
+	if (Path && (Path->GetPathPoints().Num() > 1) &&
+		Path->PathCorridor.IsValidIndex(PathSectionStart) &&
+		Path->PathCorridor.IsValidIndex(PathSectionEnd))
+	{
+		FVector TargetPos = PathSectionEndLocation;
+		if (PathSectionEnd < (Path->PathCorridor.Num() - 1))
+		{
+			RecastNavData->GetPolyCenter(Path->PathCorridor[PathSectionEnd], TargetPos);
+		}
+
+		TArray<dtPolyRef> PathRefs;
+		for (int32 Idx = PathSectionStart; Idx <= PathSectionEnd; Idx++)
+		{
+			PathRefs.Add(Path->PathCorridor[Idx]);
+		}
+
+		const INavigationQueryFilterInterface* NavFilter = Path->GetFilter().IsValid() ? Path->GetFilter()->GetImplementation() : Entry.NavData->GetDefaultQueryFilterImpl();
+		const dtQueryFilter* DetourFilter = ((const FRecastQueryFilter*)NavFilter)->GetAsDetourQueryFilter();
+
+		DetourCrowd->updateAgentFilter(AgentIndex, DetourFilter);
+		DetourCrowd->updateAgentState(AgentIndex, false);
+
+		const FVector RcTargetPos = Unreal2RecastPoint(TargetPos);
+		bSuccess = DetourCrowd->requestMoveTarget(AgentIndex, PathRefs.Last(), &RcTargetPos.X);
+		if (bSuccess)
+		{
+			bSuccess = DetourCrowd->setAgentCorridor(AgentIndex, PathRefs.GetData(), PathRefs.Num());
+		}
+	}
+#endif
+
+	return bSuccess;
 }
 
 void UVOManager::Tick(float DeltaTime)
@@ -92,118 +247,44 @@ void UVOManager::Tick(float DeltaTime)
 	LLM_SCOPE_BYTAG(VOAO);
 	TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick);
 
-	for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+	if (GlobalAgentList.Num() == 0)
+		return;
+	
+	for (FGlobalAgentEntry& It : GlobalAgentList)
 	{
-		UVOFollowingComponent* Comp = It.Get();
+		UVOFollowingComponent* Comp = It.Agent;
 		if (Comp) Comp->UpdateKinematics(DeltaTime);
 	}
 
-	if (DetourCrowd)
+	PrepareAgentsStep();
+
+	for (auto& Pair : ContextMap)
 	{
-		int32 NumActive = DetourCrowd->cacheActiveAgents();
-		if (NumActive)
-		{
-			{
-				TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick_Detour);
-				MyNavData->BeginBatchQuery();
+		dtCrowd* Crowd = Pair.Value.Crowd;
+		check(Crowd);
 
-				for (auto It = ActiveAgents.CreateIterator(); It; ++It)
-				{
-					// collect position and velocity
-					FCrowdAgentData& AgentData = It.Value();
-					if (AgentData.IsValid())
-					{
-						// Sync indices
-						if (UVOFollowingComponent* VOComp = Cast<UVOFollowingComponent>(It.Key()))
-						{
-							VOComp->DetourAgentIndex = AgentData.AgentIndex;
-						}
-					
-						PrepareAgentStep(It.Key(), AgentData, DeltaTime);
-					}
-				}
-
-				// corridor update from previous step
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepCorridorTime);
-					DetourCrowd->updateStepCorridor(DeltaTime, DetourAgentDebug);
-				}
-
-				// regular steps
-				if (bAllowPathReplan)
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepPathsTime);
-					DetourCrowd->updateStepPaths(DeltaTime, DetourAgentDebug);
-				}
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepProximityTime);
-					DetourCrowd->updateStepProximityData(DeltaTime, DetourAgentDebug);
-					PostProximityUpdate();
-				}
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNextPointTime);
-					DetourCrowd->updateStepNextMovePoint(DeltaTime, DetourAgentDebug);
-					PostMovePointUpdate();
-				}
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepSteeringTime);
-					DetourCrowd->updateStepSteering(DeltaTime, DetourAgentDebug);
-				}
-			}
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepAvoidanceTime);
-				// TODO:
-				//DetourCrowd->updateStepAvoidance(DeltaTime, DetourAgentDebug);
-				UpdateAvoidance();
-			}
-			/*if (bResolveCollisions) // TODO: ?
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepCollisionsTime);
-				DetourCrowd->updateStepMove(DeltaTime, DetourAgentDebug);
-			}*/
-			{
-				TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick_AfterAO);
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepComponentsTime);
-					UpdateAgentPaths();
-				}
-				{
-					//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepNavLinkTime);
-					DetourCrowd->updateStepOffMeshVelocity(DeltaTime, DetourAgentDebug);
-				}
-
-				MyNavData->FinishBatchQuery();
-			}
-
-			// velocity updates
-			{
-				//SCOPE_CYCLE_COUNTER(STAT_AI_Crowd_StepMovementTime);
-				/*for (auto It = ActiveAgents.CreateIterator(); It; ++It)
-				{
-					const FCrowdAgentData& AgentData = It.Value();
-					if (AgentData.bIsSimulated && AgentData.IsValid())
-					{
-						UCrowdFollowingComponent* CrowdComponent = Cast<UCrowdFollowingComponent>(It.Key());
-						if (CrowdComponent && CrowdComponent->IsCrowdSimulationEnabled())
-						{
-							ApplyVelocity(CrowdComponent, AgentData.AgentIndex);
-						}
-					}
-				}*/
-			}
-
-#if WITH_EDITOR
-			// normalize samples only for debug drawing purposes
-			// DetourAvoidanceDebug->normalizeSamples(); // TODO: ?
-#endif
-		}
+		int32 NumActive = Crowd->cacheActiveAgents();
 	}
 
+	for (auto& Pair : ContextMap)
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick_Detour);
+		dtCrowd* Crowd = Pair.Value.Crowd;
+		check(Crowd);
+
+		Crowd->cacheActiveAgents();
+		Crowd->updateStepCorridor(DeltaTime, nullptr);
+		Crowd->updateStepPaths(DeltaTime, nullptr);
+		Crowd->updateStepProximityData(DeltaTime, nullptr);
+		Crowd->updateStepNextMovePoint(DeltaTime, nullptr);
+	}
+
+	UpdateAvoidance();
 
 #ifdef SAVE_VO_PATHS
-	for (int32 i = Agents.Num() - 1; i >= 0; --i)
+	for (int32 i = GlobalAgentList.Num() - 1; i >= 0; --i)
 	{
-		UVOFollowingComponent* Comp = Agents[i].Get();
+		UVOFollowingComponent* Comp = GlobalAgentList[i].Agent;
 		if (Comp) Comp->UpdateKinematics(DeltaTime);
 	
 		// vo.ShowPaths
@@ -216,13 +297,48 @@ void UVOManager::Tick(float DeltaTime)
 #endif
 }
 
+void UVOManager::PrepareAgentsStep() const
+{
+	for (const FGlobalAgentEntry& Entry : GlobalAgentList)
+	{
+		const FCrowdContext& Ctx = ContextMap.FindChecked(Entry.NavData);
+
+		dtCrowdAgent* ag = (dtCrowdAgent*)Ctx.Crowd->getAgent(Entry.DetourAgentIndex);
+
+		FVector RcLocation = Unreal2RecastPoint(Entry.Agent->GetOwnerLocation());
+		FVector RcVelocity = Unreal2RecastPoint(Entry.Agent->GetOwnerVelocity());
+
+		dtVcopy(ag->npos, &RcLocation.X);
+		dtVcopy(ag->vel, &RcVelocity.X);
+
+		// TODO: Add syncing for all params (Event-Driven maybe)
+		
+
+		/*if (AgentData.bWantsPathOptimization)
+		{
+			AgentData.PathOptRemainingTime -= DeltaTime;
+			if (AgentData.PathOptRemainingTime > 0)
+			{
+				ag->params.updateFlags &= ~DT_CROWD_OPTIMIZE_VIS;
+			}
+			else
+			{
+				ag->params.updateFlags |= DT_CROWD_OPTIMIZE_VIS;
+				AgentData.PathOptRemainingTime = PathOptimizationInterval;
+			}
+		}*/
+	}	
+}
+
 void UVOManager::UpdateAvoidance()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::UpdateAvoidance);
-	for (int32 i = Agents.Num() - 1; i >= 0; --i)
+	for (int32 i = GlobalAgentList.Num() - 1; i >= 0; --i)
 	{
-		auto* Comp = Agents[i].Get();
-		if (!Comp) { Agents.RemoveAtSwap(i); continue; }
+		auto* Comp = GlobalAgentList[i].Agent;
+
+		// TODO: ????
+		if (!Comp) { GlobalAgentList.RemoveAtSwap(i); continue; }
 
 		APawn* P = nullptr;
 		if (const AController* C = Cast<AController>(Comp->GetOwner()))
@@ -239,13 +355,26 @@ void UVOManager::UpdateAvoidance()
 		int MaxNeisCount = 5;
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::GatherNeighbors);
-			GatherNeighbors(Comp, Params, Neis);
+			GatherNeighbors(GlobalAgentList[i], Params, Neis);
 		}
 		
 		// Prepare Buffers
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::PrepareArrays);
 			PrepareArrays(Neis.Num());
+		}
+
+		const FCrowdContext& dtCtx = ContextMap.FindChecked(GlobalAgentList[i].NavData);
+		const dtCrowdAgent* dtAgent = dtCtx.Crowd->getAgent(GlobalAgentList[i].DetourAgentIndex);
+		FVector CurrentTarget;
+		if (dtAgent->ncorners > 0)
+		{
+			CurrentTarget = Recast2UnrealPoint(&dtAgent->cornerVerts[0]);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("No corners for agent %s"), *Comp->GetName());
+			continue;
 		}
 
 		// VELOCITY OBSTACLE
@@ -255,9 +384,26 @@ void UVOManager::UpdateAvoidance()
 
 			// Calculate Desired Velocity based on Goal
 			FVector DesiredVel = FVector::ZeroVector;
+			FVector TargetPos = FVector::ZeroVector;
+			bool bHasTarget = false;
+
 			if (Comp->HasVOGoal())
 			{
-				const FVector To = (Comp->GetMoveGoal() - Pos);
+				TargetPos = Comp->GetMoveGoal()->GetActorLocation();
+				bHasTarget = true;
+			}
+			else
+			{
+				if (dtAgent->targetState != DT_CROWDAGENT_TARGET_NONE)
+				{
+					TargetPos = Recast2UnrealPoint(&dtAgent->cornerVerts[0]);
+					bHasTarget = true;
+				}
+			}
+
+			if (bHasTarget)
+			{
+				const FVector To = (TargetPos - Pos);
 				const FVector2D To2D(To.X, To.Y);
 				const float Dist = To2D.Size();
 				if (Dist > 1.f)
@@ -318,11 +464,15 @@ void UVOManager::UpdateAvoidance()
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::AO);
 			FVector TargetPos = FVector::ZeroVector;
-			const dtCrowdAgent* dtAgent = DetourCrowd->getAgent(Comp->DetourAgentIndex);
+
+			/*
+			const FCrowdContext& dtCtx = ContextMap.FindChecked(GlobalAgentList[i].NavData);
+			const dtCrowdAgent* dtAgent = dtCtx.Crowd->getAgent(GlobalAgentList[i].DetourAgentIndex);
+			*/
 			if (dtAgent->targetState == DT_CROWDAGENT_TARGET_NONE)
 				continue;
 			
-			TargetPos = Recast2UnrealPoint(&dtAgent->cornerVerts[0]);
+			TargetPos = CurrentTarget;
 			
 			FAOCalculationContext Ctx;
     
@@ -393,11 +543,11 @@ void UVOManager::UpdateAvoidance()
 }
 
 void UVOManager::GatherNeighbors(
-    const UVOFollowingComponent* Comp,
-    const FVOParams& Params,
-    TArray<FVONeighborView>& Neis)
+	const FGlobalAgentEntry& AgentEntry,
+	const FVOParams& Params,
+	TArray<FVONeighborView>& Neis)
 {
-    Neis.Reset(); 
+    Neis.Reset();
     //Neis.Reserve(5);
 
 	struct FCandidate {
@@ -447,15 +597,17 @@ void UVOManager::GatherNeighbors(
 		}
 	};
 
-	const FVector Pos = Comp->GetOwnerLocation();
+	
+	UVOFollowingComponent* Agent = AgentEntry.Agent;
+	const FVector Pos = Agent->GetOwnerLocation();
 	const float NeighborRangeSqr = FMath::Square(Params.NeighborRange);
 
 	// Gather agents
-    for (const TWeakObjectPtr<UVOFollowingComponent>& It : Agents)
+    for (FGlobalAgentEntry& It : GlobalAgentList)
     {
-       	UVOFollowingComponent* Other = It.Get();
+       	UVOFollowingComponent* Other = It.Agent;
        	
-       	if (!Other || Other == Comp)
+       	if (!Other || Other == Agent)
        		continue;
        	if (FVector::DistSquared2D(Pos, Other->GetOwnerLocation()) > NeighborRangeSqr)
        		continue;
@@ -466,10 +618,10 @@ void UVOManager::GatherNeighbors(
        	switch (Params.AvoidanceStyle)
        	{
        	    case EAvoidanceStyle::VelocityObstacle:
-       	       t = CalculateCCT_VO(Comp, Params, Other);
+       	       t = CalculateCCT_VO(Agent, Params, Other);
        	       break;
        	    case EAvoidanceStyle::AccelerationObstacle:
-       	       t = CalculateCCT_AO(Comp, Params, Other);
+       	       t = CalculateCCT_AO(Agent, Params, Other);
        	       break;
        	    default:
        	       continue; 
@@ -479,14 +631,15 @@ void UVOManager::GatherNeighbors(
     }
 
 	// Gather static segments
-	if (DetourCrowd)
+	//if (DetourCrowd)
 	{
-		const dtCrowdAgent* dtAgent = DetourCrowd->getAgent(Comp->DetourAgentIndex);
+    	const FCrowdContext& dtCtx = ContextMap.FindChecked(AgentEntry.NavData);
+		const dtCrowdAgent* dtAgent = dtCtx.Crowd->getAgent(AgentEntry.DetourAgentIndex);
 		for (int j = 0; j < dtAgent->boundary.getSegmentCount(); ++j)
 		{
 			const dtReal* s = dtAgent->boundary.getSegment(j);
 			const dtReal* q = s + 3;
-			UE_LOG(LogTemp, Log, TEXT("%f"), *dtAgent->npos);
+			
 			if (dtTriArea2D(dtAgent->npos, s, q) < 0.0f)
 				continue;
 			
@@ -502,10 +655,10 @@ void UVOManager::GatherNeighbors(
 			switch (Params.AvoidanceStyle)
 			{
 			case EAvoidanceStyle::VelocityObstacle:
-				t = CalculateCCT_VO(Comp, Params, P1, P2);
+				t = CalculateCCT_VO(Agent, Params, P1, P2);
 				break;
 			case EAvoidanceStyle::AccelerationObstacle:
-				t = CalculateCCT_AO(Comp, Params, P1, P2);
+				t = CalculateCCT_AO(Agent, Params, P1, P2);
 				break;
 			default:
 				continue; 
@@ -514,8 +667,6 @@ void UVOManager::GatherNeighbors(
 			Candidates.Add(FCandidate(P1, P2, t));
 			//TryAddCandidate(FCandidate(P1, P2, t));
 		}
-
-		UE_LOG(LogTemp, Log, TEXT("%d"), Candidates.Num() - 5);
 	}
 	
 
@@ -803,4 +954,22 @@ void UVOManager::DrawAgentPath(const UVOFollowingComponent* Comp, const TArray<F
 			2.0f    // Толщина линии
 		);
 	}
+}
+
+UWorld* UVOManager::GetWorld() const
+{
+	UNavigationSystemV1* NavSys = Cast<UNavigationSystemV1>(GetOuter());
+	return NavSys ? NavSys->GetWorld() : NULL;
+}
+
+UVOManager* UVOManager::GetCurrent(UObject* WorldContextObject)
+{
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(WorldContextObject);
+	return NavSys ? Cast<UVOManager>(NavSys->GetCrowdManager()) : NULL;
+}
+
+UVOManager* UVOManager::GetCurrent(UWorld* World)
+{
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	return NavSys ? Cast<UVOManager>(NavSys->GetCrowdManager()) : NULL;
 }

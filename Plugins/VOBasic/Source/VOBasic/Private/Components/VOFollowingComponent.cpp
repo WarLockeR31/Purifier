@@ -1,15 +1,248 @@
 #include "Components/VOFollowingComponent.h"
+
+#include "AbstractNavData.h"
 #include "Core/VOManager.h"
 #include "NavigationSystem.h"
+#include "AI/Navigation/NavAreaBase.h"
+#include "NavMesh/NavMeshPath.h"
 #include "Settings/VOSettings.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NavAreas/NavArea.h"
+#include "NavMesh/RecastNavMesh.h"
+
+DEFINE_LOG_CATEGORY(LogVOFollowing);
+
+void LogPathPartHelper(AActor* LogOwner, FNavMeshPath* NavMeshPath, int32 StartIdx, int32 EndIdx)
+{
+#if ENABLE_VISUAL_LOG && WITH_RECAST
+	ARecastNavMesh* NavMesh = Cast<ARecastNavMesh>(NavMeshPath->GetNavigationDataUsed());
+	FVisualLogger& VisualLogger = FVisualLogger::Get();
+
+	if (NavMesh == NULL ||
+		!VisualLogger.IsCategoryLogged(LogNavigation) ||
+		!NavMeshPath->PathCorridor.IsValidIndex(StartIdx) ||
+		!NavMeshPath->PathCorridor.IsValidIndex(EndIdx))
+	{
+		return;
+	}
+
+	FVisualLogShapeElement CorridorPoly(EVisualLoggerShapeElement::Polygon);
+	CorridorPoly.SetColor(FColorList::Cyan.WithAlpha(100));
+	CorridorPoly.Category = LogNavigation.GetCategoryName();
+	CorridorPoly.Points.Reserve((EndIdx - StartIdx) * 6);
+
+	const FVector CorridorOffset = NavigationDebugDrawing::PathOffset * 1.25f;
+	int32 NumAreaMark = 1;
+
+	if (FVisualLogEntry* Snapshot = FVisualLogger::GetEntryToWrite(LogOwner, LogVOFollowing))
+	{
+		NavMesh->BeginBatchQuery();
+
+		TArray<FVector> Verts;
+		for (int32 Idx = StartIdx; Idx <= EndIdx; Idx++)
+		{
+			const uint8 AreaID = IntCastChecked<uint8>(NavMesh->GetPolyAreaID(NavMeshPath->PathCorridor[Idx]));
+			const UClass* AreaClass = NavMesh->GetAreaClass(AreaID);
+
+			Verts.Reset();
+			NavMesh->GetPolyVerts(NavMeshPath->PathCorridor[Idx], Verts);
+
+			FVector CenterPt = FVector::ZeroVector;
+			for (int32 VIdx = 0; VIdx < Verts.Num(); VIdx++)
+			{
+				Verts[VIdx].Z += 5.0f;
+				CenterPt += Verts[VIdx];
+			}
+			CenterPt /= Verts.Num();
+
+			const UNavArea* DefArea = AreaClass ? ((UClass*)AreaClass)->GetDefaultObject<UNavArea>() : NULL;
+			const FColor PolygonColor = AreaClass != FNavigationSystem::GetDefaultWalkableArea() ? (DefArea ? DefArea->DrawColor : NavMesh->GetConfig().Color) : FColorList::LightSteelBlue;
+
+			CorridorPoly.SetColor(PolygonColor.WithAlpha(100));
+			CorridorPoly.Points.Reset();
+			CorridorPoly.Points.Append(Verts);
+			Snapshot->ElementsToDraw.Add(CorridorPoly);
+
+			if (AreaClass && AreaClass != FNavigationSystem::GetDefaultWalkableArea())
+			{
+				FVisualLogShapeElement AreaMarkElem(EVisualLoggerShapeElement::Segment);
+				AreaMarkElem.SetColor(FColorList::Orange.WithAlpha(100));
+				AreaMarkElem.Category = LogNavigation.GetCategoryName();
+				AreaMarkElem.Thickness = 2;
+				AreaMarkElem.Description = AreaClass->GetName();
+
+				AreaMarkElem.Points.Add(CenterPt + CorridorOffset);
+				AreaMarkElem.Points.Add(CenterPt + CorridorOffset + FVector(0, 0, 100.0f + NumAreaMark * 50.0f));
+				Snapshot->ElementsToDraw.Add(AreaMarkElem);
+
+				NumAreaMark = (NumAreaMark + 1) % 5;
+			}
+		}
+
+		NavMesh->FinishBatchQuery();
+	}
+#endif // ENABLE_VISUAL_LOG && WITH_RECAST
+}
 
 UVOFollowingComponent::UVOFollowingComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 	bWantsInitializeComponent = true;
+}
+
+void UVOFollowingComponent::Initialize()
+{
+	Super::Initialize();
+
+	SimulationState = ECrowdSimulationState::Enabled;
+}
+
+void UVOFollowingComponent::SetMoveSegment(int32 SegmentStartIndex)
+{
+	UE_LOG(LogTemp, Warning, TEXT("1"));
+	if (!IsCrowdSimulationEnabled())
+	{
+		Super::SetMoveSegment(SegmentStartIndex);
+		return;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("2"));
+
+	PathStartIndex = SegmentStartIndex;
+	LastPathPolyIndex = PathStartIndex;
+	if (Path.IsValid() == false || Path->IsValid() == false || GetOwner() == NULL)
+	{
+		return;
+	}
+	
+	FVector CurrentTargetPt = Path->GetPathPoints().Last().Location;
+
+	FNavMeshPath* NavMeshPath = Path->CastPath<FNavMeshPath>();
+	FAbstractNavigationPath* DirectPath = Path->CastPath<FAbstractNavigationPath>();
+	UE_LOG(LogTemp, Warning, TEXT("3"));
+	if (NavMeshPath)
+	{
+#if WITH_RECAST
+		if (NavMeshPath->PathCorridor.Num() == 0)
+		{
+			UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("Can't switch path segments: empty path corridor!"));
+			OnPathFinished(FPathFollowingResult(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath));
+			return;
+		}
+		else if (NavMeshPath->PathCorridor.IsValidIndex(PathStartIndex) == false)
+		{
+			// this should never matter, but just in case
+			UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("SegmentStartIndex in call to UCrowdFollowingComponent::SetMoveSegment is out of path corridor array's bounds (index: %d, array size %d)")
+				, PathStartIndex, NavMeshPath->PathCorridor.Num());
+			PathStartIndex = FMath::Clamp<int32>(PathStartIndex, 0, NavMeshPath->PathCorridor.Num() - 1);
+		}
+
+		// cut paths into parts to avoid problems with crowds getting into local minimum
+		// due to using only first 10 steps of A*
+
+		// do NOT use PathPoints here, crowd simulation disables path post processing
+		// which means, that PathPoints contains only start and end position 
+		// full path is available through PathCorridor array (poly refs)
+
+		UVOManager* VOManager = UVOManager::GetCurrent(GetWorld());
+		if (VOManager == nullptr)
+		{
+			UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("Can't switch path segments: missing crowd manager!"));
+			OnPathFinished(FPathFollowingResult(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath));
+			return;
+		}
+
+		ARecastNavMesh* RecastNavData = Cast<ARecastNavMesh>(NavMeshPath->GetNavigationDataUsed());
+		if (RecastNavData == nullptr)
+		{
+			UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("Invalid navigation data in UCrowdFollowingComponent::SetMoveSegment, expected ARecastNavMesh class, got: %s"), *GetNameSafe(NavMeshPath->GetNavigationDataUsed()));
+			OnPathFinished(FPathFollowingResult(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath));
+			return;
+		}
+		else if (VOManager->GetNavData(this) != RecastNavData)
+		{
+			UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("Invalid navigation data in UCrowdFollowingComponent::SetMoveSegment, expected 0x%X, got: 0x%X"), VOManager->GetNavData(this), RecastNavData);
+			OnPathFinished(FPathFollowingResult(EPathFollowingResult::Aborted, FPathFollowingResultFlags::InvalidPath));
+			return;
+		}
+
+		const int32 PathPartSize = 15;
+		const int32 LastPolyIdx = NavMeshPath->PathCorridor.Num() - 1;
+		int32 PathPartEndIdx = FMath::Min(PathStartIndex + PathPartSize, LastPolyIdx);
+		bFinalPathPart = (PathPartEndIdx == LastPolyIdx);
+
+		FVector PtA, PtB;
+		const bool bStartIsNavLink = RecastNavData->GetLinkEndPoints(NavMeshPath->PathCorridor[PathStartIndex], PtA, PtB);
+		if (bStartIsNavLink)
+		{
+			PathStartIndex = FMath::Max(0, PathStartIndex - 1);
+		}
+
+		if (!bFinalPathPart)
+		{
+			const bool bEndIsNavLink = RecastNavData->GetLinkEndPoints(NavMeshPath->PathCorridor[PathPartEndIdx], PtA, PtB);
+			const bool bSwitchIsNavLink = (PathPartEndIdx > 0) ? RecastNavData->GetLinkEndPoints(NavMeshPath->PathCorridor[PathPartEndIdx - 1], PtA, PtB) : false;
+			if (bEndIsNavLink)
+			{
+				PathPartEndIdx = FMath::Max(0, PathPartEndIdx - 1);
+			}
+			if (bSwitchIsNavLink)
+			{
+				PathPartEndIdx = FMath::Max(0, PathPartEndIdx - 2);
+			}
+
+			RecastNavData->GetPolyCenter(NavMeshPath->PathCorridor[PathPartEndIdx], CurrentTargetPt);
+		}
+		else if (NavMeshPath->IsPartial())
+		{
+			RecastNavData->GetClosestPointOnPoly(NavMeshPath->PathCorridor[PathPartEndIdx], Path->GetPathPoints().Last().Location, CurrentTargetPt);
+		}
+
+		// not safe to read those directions yet, you have to wait until crowd manager gives you next corner of string pulled path
+		CrowdAgentMoveDirection = FVector::ZeroVector;
+		MoveSegmentDirection = FVector::ZeroVector;
+
+		CurrentDestination.Set(Path->GetBaseActor(), CurrentTargetPt);
+
+		LogPathPartHelper(GetOwner(), NavMeshPath, PathStartIndex, PathPartEndIdx);
+		UE_VLOG_SEGMENT(GetOwner(), LogVOFollowing, Log, NavMovementInterface->GetFeetLocation(), CurrentTargetPt, FColor::Red, TEXT("path part"));
+		UE_VLOG(GetOwner(), LogVOFollowing, Log, TEXT("SetMoveSegment, from:%d segments:%d%s"),
+			PathStartIndex, (PathPartEndIdx - PathStartIndex)+1, bFinalPathPart ? TEXT(" (final)") : TEXT(""));
+
+		VOManager->SetAgentMovePath(this, NavMeshPath, PathStartIndex, PathPartEndIdx, CurrentTargetPt);
+#endif
+	}
+	/*else if (DirectPath)
+	{
+		//TODO: Implement
+		
+		// direct paths are not using any steering or avoidance
+		// pathfinding is replaced with simple velocity request 
+
+		const FVector AgentLoc = NavMovementInterface->GetFeetLocation();
+
+		bFinalPathPart = true;
+		bCheckMovementAngle = true;
+		bUpdateDirectMoveVelocity = true;
+		CurrentDestination.Set(Path->GetBaseActor(), CurrentTargetPt);
+		CrowdAgentMoveDirection = (CurrentTargetPt - AgentLoc).GetSafeNormal();
+		MoveSegmentDirection = CrowdAgentMoveDirection;
+
+		UE_VLOG(GetOwner(), LogVOFollowing, Log, TEXT("SetMoveSegment, direct move"));
+		UE_VLOG_SEGMENT(GetOwner(), LogVOFollowing, Log, AgentLoc, CurrentTargetPt, FColor::Red, TEXT("path"));
+
+		UCrowdManager* CrowdManager = UCrowdManager::GetCurrent(GetWorld());
+		if (CrowdManager)
+		{
+			CrowdManager->SetAgentMoveDirection(this, CrowdAgentMoveDirection);
+		}
+	}*/
+	else
+	{
+		UE_VLOG(GetOwner(), LogVOFollowing, Error, TEXT("SetMoveSegment, unknown path type!"));
+	}
 }
 
 void UVOFollowingComponent::OnRegister()
@@ -28,6 +261,15 @@ void UVOFollowingComponent::OnUnregister()
 			if (auto* CM = Cast<UVOManager>(Nav->GetCrowdManager()))
 				CM->UnregisterAgent(this);
 	Super::OnUnregister();
+}
+
+void UVOFollowingComponent::FollowPathSegment(float DeltaTime)
+{
+	/*if (Path.IsValid() && IsCrowdSimulationActive())
+	{
+		UpdatePathSegment();
+	}*/
+	Super::FollowPathSegment(DeltaTime);
 }
 
 void UVOFollowingComponent::SetVOProfile(FName InProfileName)
@@ -154,7 +396,9 @@ FVector UVOFollowingComponent::GetOwnerLocation() const
 {
 	// TODO: CachedPawn?
 	const APawn* P = GetControlledPawn_Local(this);
-	return P ? P->GetActorLocation() : FVector::ZeroVector;
+	FVector Result = P ? P->GetActorLocation() : FVector::ZeroVector;
+	Result.Z = 0.f;
+	return Result;
 }
 
 FVector UVOFollowingComponent::GetOwnerVelocity() const

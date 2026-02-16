@@ -3,6 +3,8 @@
 #include "Navigation/CrowdFollowingComponent.h"
 #include "VOFollowingComponent.generated.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogVOFollowing, Warning, All);
+
 class UVOSettings;
 
 UENUM(BlueprintType)
@@ -64,6 +66,9 @@ class VOBASIC_API UVOFollowingComponent : public UCrowdFollowingComponent
 // Fields & Properties
 public:
 	UVOFollowingComponent();
+
+	virtual void Initialize() override;
+	virtual void SetMoveSegment(int32 SegmentStartIndex) override; // Copy-pasted from UE source-code, adapted for UVOController
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO|Debug")	bool		bDebugDraw = false;
 	UPROPERTY(EditAnywhere, Category="VO|Debug")	FColor		DebugDrawColor = FColor::Red;
@@ -107,7 +112,7 @@ public:
 	FVector 		GetOwnerVelocity()	const;
 	float   		GetAgentRadius()	const	{ return GetEffectiveParams().AgentRadius; }
 	bool			HasVOGoal()			const	{ return bHasGoal; }
-	FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
+	//FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
 	EAvoidanceStyle GetAvoidanceStyle() const	{ return GetEffectiveParams().AvoidanceStyle; }
 
 	void			UpdateKinematics(float DeltaTime);
@@ -117,12 +122,11 @@ public:
 	// Index in UVOManager arrays (for O(1) access and removal)
 	int32			VOManagerIndex = INDEX_NONE;
 
-	// Cached index from Detour (UCrowdManager::ActiveAgents)
-	int32			DetourAgentIndex = INDEX_NONE;
-
 protected:
 	virtual void OnRegister() override;
 	virtual void OnUnregister() override;
+
+	virtual void FollowPathSegment(float DeltaTime) override;
 	
 private:
 	// Source config

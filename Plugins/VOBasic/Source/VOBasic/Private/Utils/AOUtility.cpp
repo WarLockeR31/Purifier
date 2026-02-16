@@ -331,7 +331,16 @@ namespace
 
 		for (const FVONeighborView& N : Neis)
 		{
-			const float R = Params.AgentRadius + N.Radius;
+			float R;
+			if (N.ShapeType == EMinkowskiShapeType::Capsule)
+			{
+				R = 0;
+			}
+			else
+			{
+				R = Params.AgentRadius + N.Radius;
+			}
+			
 			const FVector2D pRel(N.Pos.X - ActorPos.X, N.Pos.Y - ActorPos.Y);
 
 			// TODO: For all shapes

@@ -1,9 +1,28 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "Components/VOFollowingComponent.h"
 #include "Navigation/CrowdManager.h"
 #include "Types/VelocityObstacleTypes.h"
 #include "Types/AccelerationObstacleTypes.h"
 #include "VOManager.generated.h"
+
+class dtCrowd;
+class dtNavMeshQuery;
+class ANavigationData;
+class ICrowdAgentInterface;
+
+struct FCrowdContext
+{
+	dtCrowd* Crowd = nullptr;
+	// dtNavMeshQuery* NavQuery = nullptr;
+};
+
+struct FGlobalAgentEntry
+{
+	UVOFollowingComponent* Agent = nullptr;
+	ANavigationData* NavData = nullptr;
+	int32 DetourAgentIndex = -1;
+};
 
 DECLARE_CYCLE_STAT(TEXT("VO Compute Velocity"), STAT_VOComputeVelocity, STATGROUP_Game);
 LLM_DECLARE_TAG(VOAO);
@@ -81,20 +100,43 @@ struct FVONeighborView
 };
 
 UCLASS()
-class VOBASIC_API UVOManager : public UCrowdManager
+class VOBASIC_API UVOManager : public UCrowdManagerBase
 {
 	GENERATED_BODY()
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	void RegisterAgent(UVOFollowingComponent* Comp);
-	void UnregisterAgent(UVOFollowingComponent* Comp);
+	virtual void OnNavDataRegistered(ANavigationData& NavDataInstance) override;
+	virtual void OnNavDataUnregistered(ANavigationData& NavDataInstance) override;
 
+	//virtual void BeginDestroy() override;
+
+	void RegisterAgent(UVOFollowingComponent* Agent);
+	void UnregisterAgent(UVOFollowingComponent* Agent);
+
+	bool SetAgentMovePath(
+		const UVOFollowingComponent* AgentComponent,
+		const FNavMeshPath* Path,
+		int32 PathSectionStart,
+		int32 PathSectionEnd,
+		const FVector& PathSectionEndLocation) const; // Copy-pasted from UE source-code, adapted for UVOController
+
+	UWorld* GetWorld() const override;
+
+	static UVOManager* GetCurrent(UObject* WorldContextObject);
+	static UVOManager* GetCurrent(UWorld* World);
+
+	const ANavigationData* GetNavData(const UVOFollowingComponent* Agent) const { return GlobalAgentList[Agent->VOManagerIndex].NavData; }
 protected:
+	void PrepareAgentsStep() const;
+	
 	void UpdateAvoidance();
 	
 private:
-	TArray<TWeakObjectPtr<UVOFollowingComponent>> Agents;
+	TMap<ANavigationData*, FCrowdContext> ContextMap;
+	TArray<FGlobalAgentEntry> GlobalAgentList;
+
+	//TArray<TWeakObjectPtr<UVOFollowingComponent>> Agents;
 
 	// Global buffer for current agent's neighbors' vertices (cleared per-agent)
 	TArray<FVector2D> NeighborVerticesBuffer;
@@ -114,7 +156,7 @@ private:
 	TArray<FVector2D> AO_Candidates;
 	int32 AO_BestCandidateIdx;
 
-	void GatherNeighbors(const UVOFollowingComponent* Comp, const FVOParams& Params, TArray<FVONeighborView>& Neis);
+	void GatherNeighbors(const FGlobalAgentEntry& AgentEntry, const FVOParams& Params, TArray<FVONeighborView>& Neis);
 	// CCT for agents
 	float CalculateCCT_VO(
 		const UVOFollowingComponent* Agent,
