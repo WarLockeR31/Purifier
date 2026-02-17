@@ -104,12 +104,17 @@ class VOBASIC_API UVOManager : public UCrowdManagerBase
 {
 	GENERATED_BODY()
 public:
+	UVOManager(const FObjectInitializer& ObjectInitializer);
+	virtual void BeginDestroy() override;
+	
 	virtual void Tick(float DeltaTime) override;
+	
+#if WITH_EDITOR
+	void DebugTick() const;
+#endif
 
 	virtual void OnNavDataRegistered(ANavigationData& NavDataInstance) override;
 	virtual void OnNavDataUnregistered(ANavigationData& NavDataInstance) override;
-
-	//virtual void BeginDestroy() override;
 
 	void RegisterAgent(UVOFollowingComponent* Agent);
 	void UnregisterAgent(UVOFollowingComponent* Agent);
@@ -182,4 +187,22 @@ private:
 	void PrepareArrays(size_t NumNeis);
 
 	void DrawAgentPath(const UVOFollowingComponent* Comp, const TArray<FVector>& PathHistory, const FColor& Color = FColor::Red);
+
+protected:
+#if WITH_RECAST
+	dtCrowdAgentDebugInfo* DetourAgentDebug = nullptr;
+	dtObstacleAvoidanceDebugData* DetourAvoidanceDebug = nullptr;
+
+	void UpdateSelectedDebug(const ICrowdAgentInterface* Agent, int32 AgentIndex) const;
+#if ENABLE_DRAW_DEBUG
+	UWorld* GetDebugDrawingWorld() const;
+	void DrawDebugCorners(const FGlobalAgentEntry* Agent) const;
+	void DrawDebugCollisionSegments(const FGlobalAgentEntry* Agent) const;
+	void DrawDebugPath(const FGlobalAgentEntry* Agent) const;
+	void DrawDebugPathOptimization(const FGlobalAgentEntry* Agent) const;
+	//void DrawDebugNeighbors(const FGlobalAgentEntry* Agent) const;
+	void DrawDebugSharedBoundary() const;
+#endif // ENABLE_DRAW_DEBUG
+
+#endif
 };

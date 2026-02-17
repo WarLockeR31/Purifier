@@ -50,6 +50,74 @@ static TAutoConsoleVariable<int32> CVarVODebugShowPaths(
 
 LLM_DEFINE_TAG(VOAO);
 
+namespace FExternalCrowdDebug
+{
+#define DEFINE_EXTERNAL_CVAR_ACCESSOR(FuncName, CVarString) \
+	int32 FuncName() { \
+		static const IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT(CVarString)); \
+		return CVar ? CVar->GetInt() : 0; \
+	}
+
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DebugSelectedActors, "ai.crowd.DebugSelectedActors");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DebugVisLog, "ai.crowd.DebugVisLog");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugCorners, "ai.crowd.DrawDebugCorners");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugCollisionSegments, "ai.crowd.DrawDebugCollisionSegments");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugPath, "ai.crowd.DrawDebugPath");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugVelocityObstacles, "ai.crowd.DrawDebugVelocityObstacles");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugPathOptimization, "ai.crowd.DrawDebugPathOptimization");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugNeighbors, "ai.crowd.DrawDebugNeighbors");
+	DEFINE_EXTERNAL_CVAR_ACCESSOR(DrawDebugBoundaries, "ai.crowd.DrawDebugBoundaries");
+
+#undef DEFINE_EXTERNAL_CVAR_ACCESSOR
+
+	const FVector Offset(0, 0, 20);
+
+	const FColor Corner(128, 0, 0);
+	const FColor CornerLink(192, 0, 0);
+	const FColor CornerFixed(192, 192, 0);
+	const FColor CollisionRange(192, 0, 128);
+	const FColor CollisionSeg0(192, 0, 128);
+	const FColor CollisionSeg1(96, 0, 64);
+	const FColor CollisionSegIgnored(128, 128, 128);
+	const FColor Path(255, 255, 255);
+	const FColor PathSpecial(255, 192, 203);
+	const FColor PathOpt(0, 128, 0);
+	const FColor AvoidanceRange(255, 255, 255);
+	const FColor Neighbor(0, 192, 128);
+
+	const float LineThickness = 3.f;
+}
+
+UVOManager::UVOManager(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+#if WITH_RECAST
+	DetourAvoidanceDebug = dtAllocObstacleAvoidanceDebugData();
+	if (DetourAvoidanceDebug)
+	{
+		DetourAvoidanceDebug->init(2048);
+	}
+
+	DetourAgentDebug = new dtCrowdAgentDebugInfo();
+	FMemory::Memzero(DetourAgentDebug, sizeof(dtCrowdAgentDebugInfo));
+	DetourAgentDebug->idx = -1;
+	DetourAgentDebug->vod = DetourAvoidanceDebug;
+#endif
+}
+
+void UVOManager::BeginDestroy()
+{
+#if WITH_RECAST
+	if (DetourAvoidanceDebug)
+	{
+		dtFreeObstacleAvoidanceDebugData(DetourAvoidanceDebug);
+		DetourAvoidanceDebug = nullptr;
+	}
+	delete DetourAgentDebug;
+	DetourAgentDebug = nullptr;
+#endif
+	Super::BeginDestroy();
+}
+
 void UVOManager::OnNavDataRegistered(ANavigationData& NavDataInstance)
 {
 	ARecastNavMesh* RecastNavMesh = Cast<ARecastNavMesh>(&NavDataInstance);
@@ -273,10 +341,10 @@ void UVOManager::Tick(float DeltaTime)
 		check(Crowd);
 
 		Crowd->cacheActiveAgents();
-		Crowd->updateStepCorridor(DeltaTime, nullptr);
-		Crowd->updateStepPaths(DeltaTime, nullptr);
-		Crowd->updateStepProximityData(DeltaTime, nullptr);
-		Crowd->updateStepNextMovePoint(DeltaTime, nullptr);
+		Crowd->updateStepCorridor(DeltaTime, DetourAgentDebug);
+		Crowd->updateStepPaths(DeltaTime, DetourAgentDebug);
+		Crowd->updateStepProximityData(DeltaTime, DetourAgentDebug);
+		Crowd->updateStepNextMovePoint(DeltaTime, DetourAgentDebug);
 	}
 
 	UpdateAvoidance();
@@ -294,6 +362,10 @@ void UVOManager::Tick(float DeltaTime)
 			DrawAgentPath(Comp, Comp->PathHistory, AvoidanceMath::GetColorFromSeed(i));
 		}
 	}
+#endif
+
+#if WITH_EDITOR
+	DebugTick();
 #endif
 }
 
@@ -313,7 +385,6 @@ void UVOManager::PrepareAgentsStep() const
 
 		// TODO: Add syncing for all params (Event-Driven maybe)
 		
-
 		/*if (AgentData.bWantsPathOptimization)
 		{
 			AgentData.PathOptRemainingTime -= DeltaTime;
@@ -973,3 +1044,353 @@ UVOManager* UVOManager::GetCurrent(UWorld* World)
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 	return NavSys ? Cast<UVOManager>(NavSys->GetCrowdManager()) : NULL;
 }
+
+#pragma region DEBUG_CROWD
+#if WITH_RECAST
+
+#if ENABLE_DRAW_DEBUG
+UWorld* UVOManager::GetDebugDrawingWorld() const
+{
+	UWorld* DebugDrawingWorld = GetWorld();
+
+#if WITH_EDITORONLY_DATA
+	// note that being ENetMode::NM_DedicatedServer implies DebugDrawingWorld is a game world, which is exactly what we need
+	if (DebugDrawingWorld != nullptr && DebugDrawingWorld->GetNetMode() == ENetMode::NM_DedicatedServer)
+	{
+		// no point in trying to draw on dedicated server. Let's see if there's a client world we can use for drawing!
+		const TIndirectArray<FWorldContext>& WorldContexts = GEngine->GetWorldContexts();
+		for (const FWorldContext& Context : WorldContexts)
+		{
+			if (Context.World()->IsGameWorld() && Context.World()->GetNetMode() != ENetMode::NM_DedicatedServer)
+			{
+				DebugDrawingWorld = Context.World();
+				break;
+			}
+		}
+	}
+#endif
+
+	return DebugDrawingWorld;
+}
+
+void UVOManager::DrawDebugCorners(const FGlobalAgentEntry* Agent) const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+
+	ANavigationData* NavData = Agent->NavData;
+	const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(Agent->DetourAgentIndex);
+
+	{
+		FVector P0 = Recast2UnrealPoint(CrowdAgent->npos);
+		for (int32 Idx = 0; Idx < CrowdAgent->ncorners; Idx++)
+		{
+			FVector P1 = Recast2UnrealPoint(&CrowdAgent->cornerVerts[Idx * 3]);
+			DrawDebugLine(DebugDrawingWorld, P0 + FExternalCrowdDebug::Offset, P1 + FExternalCrowdDebug::Offset, FExternalCrowdDebug::Corner, false, -1.0f, SDPG_World, 2.0f);
+			P0 = P1;
+		}
+	}
+
+	if (CrowdAgent->ncorners > 0 && (CrowdAgent->cornerFlags[CrowdAgent->ncorners - 1] & DT_STRAIGHTPATH_OFFMESH_CONNECTION))
+	{
+		FVector P0 = Recast2UnrealPoint(&CrowdAgent->cornerVerts[(CrowdAgent->ncorners - 1) * 3]);
+		DrawDebugLine(DebugDrawingWorld, P0, P0 + FExternalCrowdDebug::Offset * 2.0f, FExternalCrowdDebug::CornerLink, false, -1.0f, SDPG_World, 2.0f);
+	}
+}
+
+void UVOManager::DrawDebugCollisionSegments(const FGlobalAgentEntry* Agent) const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+	
+	ANavigationData* NavData = Agent->NavData;
+	const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(Agent->DetourAgentIndex);
+
+	FVector Center = Recast2UnrealPoint(CrowdAgent->boundary.getCenter()) + FExternalCrowdDebug::Offset;
+	DrawDebugCylinder(DebugDrawingWorld, Center - FExternalCrowdDebug::Offset, Center, UE_REAL_TO_FLOAT_CLAMPED_MAX(CrowdAgent->params.collisionQueryRange), 32, FExternalCrowdDebug::CollisionRange);
+
+	for (int32 Idx = 0; Idx < CrowdAgent->boundary.getSegmentCount(); Idx++)
+	{
+		const FVector::FReal* s = CrowdAgent->boundary.getSegment(Idx);
+		const int32 SegFlags = CrowdAgent->boundary.getSegmentFlags(Idx);
+		const FColor Color = (SegFlags & DT_CROWD_BOUNDARY_IGNORE) ? FExternalCrowdDebug::CollisionSegIgnored :
+			(dtTriArea2D(CrowdAgent->npos, s, s + 3) < 0.0f) ? FExternalCrowdDebug::CollisionSeg1 :
+			FExternalCrowdDebug::CollisionSeg0;
+
+		FVector Pt0 = Recast2UnrealPoint(s);
+		FVector Pt1 = Recast2UnrealPoint(s + 3);
+
+		DrawDebugLine(DebugDrawingWorld, Pt0 + FExternalCrowdDebug::Offset, Pt1 + FExternalCrowdDebug::Offset, Color, false, -1.0f, SDPG_World, 3.5f);
+	}
+}
+
+void UVOManager::DrawDebugPath(const FGlobalAgentEntry* Agent) const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+
+	ANavigationData* NavData = Agent->NavData;
+	const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(Agent->DetourAgentIndex);
+	
+	ARecastNavMesh* NavMesh = Cast<ARecastNavMesh>(NavData);
+	if (NavMesh == NULL)
+	{
+		return;
+	}
+
+	NavMesh->BeginBatchQuery();
+	
+	const dtPolyRef* Path = CrowdAgent->corridor.getPath();
+	TArray<FVector> Verts;
+
+	for (int32 Idx = 0; Idx < CrowdAgent->corridor.getPathCount(); Idx++)
+	{
+		Verts.Reset();
+		NavMesh->GetPolyVerts(Path[Idx], Verts);
+
+		uint16 PolyFlags = 0;
+		uint16 AreaFlags = 0;
+		NavMesh->GetPolyFlags(Path[Idx], PolyFlags, AreaFlags);
+		const FColor PolyColor = AreaFlags != 1 ? FExternalCrowdDebug::Path : FExternalCrowdDebug::PathSpecial;
+
+		for (int32 VertIdx = 0; VertIdx < Verts.Num(); VertIdx++)
+		{
+			const FVector Pt0 = Verts[VertIdx];
+			const FVector Pt1 = Verts[(VertIdx + 1) % Verts.Num()];
+
+			DrawDebugLine(DebugDrawingWorld, Pt0 + FExternalCrowdDebug::Offset * 0.5f, Pt1 + FExternalCrowdDebug::Offset * 0.5f, PolyColor, false
+				, /*LifeTime*/-1.f, /*DepthPriority*/0
+				, /*Thickness*/FExternalCrowdDebug::LineThickness);
+		}
+	}
+
+	NavMesh->FinishBatchQuery();
+}
+
+void UVOManager::DrawDebugPathOptimization(const FGlobalAgentEntry* Agent) const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+
+	FVector Pt0 = Recast2UnrealPoint(DetourAgentDebug->optStart) + FExternalCrowdDebug::Offset * 1.25f;
+	FVector Pt1 = Recast2UnrealPoint(DetourAgentDebug->optEnd) + FExternalCrowdDebug::Offset * 1.25f;
+
+	DrawDebugLine(DebugDrawingWorld, Pt0, Pt1, FExternalCrowdDebug::PathOpt, false, -1.0f, SDPG_World, 2.5f);
+}
+
+/*void UVOManager::DrawDebugNeighbors(const FGlobalAgentEntry* Agent) const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+
+	ANavigationData* NavData = Agent->NavData;
+	const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(Agent->DetourAgentIndex);
+
+	FVector Center = Recast2UnrealPoint(CrowdAgent->npos) + FExternalCrowdDebug::Offset;
+	DrawDebugCylinder(DebugDrawingWorld, Center - FExternalCrowdDebug::Offset, Center, UE_REAL_TO_FLOAT_CLAMPED_MAX(CrowdAgent->params.collisionQueryRange), 32, FExternalCrowdDebug::CollisionRange);
+
+	for (int32 Idx = 0; Idx < CrowdAgent->nneis; Idx++)
+	{
+		const dtCrowdAgent* nei = DetourCrowd->getAgent(CrowdAgent->neis[Idx].idx);
+		if (nei)
+		{
+			FVector Pt0 = Recast2UnrealPoint(nei->npos) + FExternalCrowdDebug::Offset;
+			DrawDebugLine(DebugDrawingWorld, Center, Pt0, FExternalCrowdDebug::Neighbor);
+		}
+	}
+}*/
+
+void UVOManager::DrawDebugSharedBoundary() const
+{
+	UWorld* DebugDrawingWorld = GetDebugDrawingWorld();
+
+	FColor Colors[] = { FColorList::Red, FColorList::Orange };
+
+	for (auto& Pair : ContextMap)
+	{
+		const dtCrowd* DetourCrowd = Pair.Value.Crowd;
+
+		const dtSharedBoundary* sharedBounds = DetourCrowd->getSharedBoundary();
+		for (int32 Idx = 0; Idx < sharedBounds->Data.Num(); Idx++)
+		{
+			FColor Color = Colors[Idx % UE_ARRAY_COUNT(Colors)];
+			const FVector Center = Recast2UnrealPoint(sharedBounds->Data[Idx].Center);
+			DrawDebugCylinder(DebugDrawingWorld, Center - FExternalCrowdDebug::Offset, Center, UE_REAL_TO_FLOAT_CLAMPED_MAX(sharedBounds->Data[Idx].Radius), 32, Color);
+
+			for (int32 WallIdx = 0; WallIdx < sharedBounds->Data[Idx].Edges.Num(); WallIdx++)
+			{
+				const FVector WallV0 = Recast2UnrealPoint(sharedBounds->Data[Idx].Edges[WallIdx].v0) + FExternalCrowdDebug::Offset;
+				const FVector WallV1 = Recast2UnrealPoint(sharedBounds->Data[Idx].Edges[WallIdx].v1) + FExternalCrowdDebug::Offset;
+
+				DrawDebugLine(DebugDrawingWorld, WallV0, WallV1, Color);
+			}
+		}
+	}
+}
+#endif // ENABLE_DRAW_DEBUG
+
+void UVOManager::UpdateSelectedDebug(const ICrowdAgentInterface* Agent, int32 AgentIndex) const
+{
+#if WITH_EDITOR
+	const UObject* Obj = Cast<const UObject>(Agent);
+	if (GIsEditor && Obj)
+	{
+		const AController* TestController = Cast<const AController>(Obj->GetOuter());
+		if (TestController && TestController->GetPawn() && TestController->GetPawn()->IsSelected())
+		{
+			DetourAgentDebug->idx = AgentIndex;
+		}
+	}
+#endif
+}
+
+#endif // WITH_RECAST
+
+#if WITH_EDITOR
+
+void UVOManager::DebugTick() const
+{
+#if WITH_RECAST
+	if (ContextMap.Num() == 0 || DetourAgentDebug == NULL)
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < GlobalAgentList.Num(); ++i)
+	{
+		const FGlobalAgentEntry& It = GlobalAgentList[i];
+		const UVOFollowingComponent* Agent = It.Agent;
+		ANavigationData* NavData = It.NavData;
+		const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(It.DetourAgentIndex);
+		if (CrowdAgent)
+		{
+			UpdateSelectedDebug(Agent, i);
+		}
+	}
+	
+#if ENABLE_DRAW_DEBUG
+	// on screen debugging
+	/*const dtCrowdAgent* SelectedAgent = NULL;
+	if (DetourAgentDebug->idx >= 0)
+	{
+		dtCrowd* Crowd = ContextMap.FindChecked(GlobalAgentList[DetourAgentDebug->idx].NavData).Crowd;
+		SelectedAgent = Crowd->getAgent(GlobalAgentList[DetourAgentDebug->idx].DetourAgentIndex);
+	}*/
+	const FGlobalAgentEntry* SelectedAgent = NULL;
+	if (DetourAgentDebug->idx >= 0)
+		SelectedAgent = &GlobalAgentList[DetourAgentDebug->idx];
+	if (SelectedAgent && FExternalCrowdDebug::DebugSelectedActors())
+	{
+		if (FExternalCrowdDebug::DrawDebugCorners())
+		{
+			DrawDebugCorners(SelectedAgent);
+		}
+
+		if (FExternalCrowdDebug::DrawDebugCollisionSegments())
+		{
+			DrawDebugCollisionSegments(SelectedAgent);
+		}
+
+		if (FExternalCrowdDebug::DrawDebugPath())
+		{
+			DrawDebugPath(SelectedAgent);
+		}
+
+		if (FExternalCrowdDebug::DrawDebugPathOptimization())
+		{
+			DrawDebugPathOptimization(SelectedAgent);
+		}
+
+		/*if (FExternalCrowdDebug::DrawDebugNeighbors)
+		{
+			DrawDebugNeighbors(SelectedAgent);
+		}*/
+	}
+
+	if (FExternalCrowdDebug::DrawDebugBoundaries())
+	{
+		DrawDebugSharedBoundary();
+	}
+#endif // ENABLE_DRAW_DEBUG
+
+	// vislog debugging
+	if (FExternalCrowdDebug::DebugVisLog())
+	{
+		for (int i = 0; i < GlobalAgentList.Num(); ++i)
+		{
+			const FGlobalAgentEntry& It = GlobalAgentList[i];
+			ANavigationData* NavData = It.NavData;
+			const dtCrowdAgent* CrowdAgent = ContextMap.FindChecked(NavData).Crowd->getAgent(It.DetourAgentIndex);
+			
+			const ICrowdAgentInterface* IAgent = It.Agent;
+			const UObject* AgentOb = IAgent ?  Cast<const UObject>(IAgent) : NULL;
+			const AActor* LogOwner = AgentOb ? Cast<const AActor>(AgentOb->GetOuter()) : NULL;
+
+			if (CrowdAgent && LogOwner)
+			{
+				FString LogData = DetourAgentDebug->agentLog.FindRef(i);
+				if (LogData.Len() > 0)
+				{
+					UE_VLOG(LogOwner, LogVOFollowing, Log, TEXT("%s"), *LogData);
+				}
+
+				{
+					FVector P0 = Recast2UnrealPoint(CrowdAgent->npos);
+					for (int32 Idx = 0; Idx < CrowdAgent->ncorners; Idx++)
+					{
+						FVector P1 = Recast2UnrealPoint(&CrowdAgent->cornerVerts[Idx * 3]);
+						UE_VLOG_SEGMENT(LogOwner, LogVOFollowing, Log, P0 + FExternalCrowdDebug::Offset, P1 + FExternalCrowdDebug::Offset, FExternalCrowdDebug::Corner, TEXT(""));
+						UE_VLOG_BOX(LogOwner, LogVOFollowing, Log, FBox::BuildAABB(P1 + FExternalCrowdDebug::Offset, FVector(2, 2, 2)), FExternalCrowdDebug::Corner, TEXT("%d"), CrowdAgent->cornerFlags[Idx]);
+						P0 = P1;
+					}
+				}
+
+				ARecastNavMesh* RecastNavData = Cast<ARecastNavMesh>(NavData);
+				if (RecastNavData)
+				{
+					for (int32 Idx = 0; Idx < CrowdAgent->corridor.getPathCount(); Idx++)
+					{
+						dtPolyRef PolyRef = CrowdAgent->corridor.getPath()[Idx];
+						TArray<FVector> PolyPoints;
+						RecastNavData->GetPolyVerts(PolyRef, PolyPoints);
+
+						UE_VLOG_CONVEXPOLY(LogOwner, LogVOFollowing, Verbose, PolyPoints, FColor::Cyan, TEXT(""));
+					}
+				}
+
+				if (CrowdAgent->ncorners && (CrowdAgent->cornerFlags[CrowdAgent->ncorners - 1] & DT_STRAIGHTPATH_OFFMESH_CONNECTION))
+				{
+					FVector P0 = Recast2UnrealPoint(&CrowdAgent->cornerVerts[(CrowdAgent->ncorners - 1) * 3]);
+					UE_VLOG_SEGMENT(LogOwner, LogVOFollowing, Log, P0, P0 + FExternalCrowdDebug::Offset * 2.0f, FExternalCrowdDebug::CornerLink, TEXT(""));
+				}
+
+				if (CrowdAgent->corridor.hasNextFixedCorner())
+				{
+					FVector P0 = Recast2UnrealPoint(CrowdAgent->corridor.getNextFixedCorner());
+					UE_VLOG_BOX(LogOwner, LogVOFollowing, Log, FBox::BuildAABB(P0 + FExternalCrowdDebug::Offset, FVector(10, 10, 10)), FExternalCrowdDebug::CornerFixed, TEXT(""));
+				}
+
+				if (CrowdAgent->corridor.hasNextFixedCorner2())
+				{
+					FVector P0 = Recast2UnrealPoint(CrowdAgent->corridor.getNextFixedCorner2());
+					UE_VLOG_BOX(LogOwner, LogVOFollowing, Log, FBox::BuildAABB(P0 + FExternalCrowdDebug::Offset, FVector(10, 10, 10)), FExternalCrowdDebug::CornerFixed, TEXT(""));
+				}
+
+				for (int32 Idx = 0; Idx < CrowdAgent->boundary.getSegmentCount(); Idx++)
+				{
+					const FVector::FReal* s = CrowdAgent->boundary.getSegment(Idx);
+					const int32 SegFlags = CrowdAgent->boundary.getSegmentFlags(Idx);
+					const FColor Color = (SegFlags & DT_CROWD_BOUNDARY_IGNORE) ? FExternalCrowdDebug::CollisionSegIgnored :
+						(dtTriArea2D(CrowdAgent->npos, s, s + 3) < 0.0f) ? FExternalCrowdDebug::CollisionSeg1 :
+						FExternalCrowdDebug::CollisionSeg0;
+
+					FVector Pt0 = Recast2UnrealPoint(s);
+					FVector Pt1 = Recast2UnrealPoint(s + 3);
+
+					UE_VLOG_SEGMENT_THICK(LogOwner, LogVOFollowing, Log, Pt0 + FExternalCrowdDebug::Offset, Pt1 + FExternalCrowdDebug::Offset, Color, 3, TEXT(""));
+				}
+			}
+		}
+	}
+
+	DetourAgentDebug->agentLog.Reset();
+#endif	// WITH_RECAST
+}
+
+#endif // WITH_EDITOR
+#pragma endregion
