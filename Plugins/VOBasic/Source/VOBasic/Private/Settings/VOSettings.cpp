@@ -1,10 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "VOSettings.h"
+#include "Settings/VOSettings.h"
 #include "UObject/UObjectIterator.h"
 #include "Templates/SubclassOf.h"
 
-#include "VOFollowingComponent.h" // TODO: Replace?
+#include "Components/VOFollowingComponent.h" // TODO: Replace?
 
 const FVOParams& UVOSettings::GetPresetOrDefault(FName Name) const
 {

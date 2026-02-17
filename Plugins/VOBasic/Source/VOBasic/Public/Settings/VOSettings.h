@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "GameFramework/Pawn.h"
-#include "VOFollowingComponent.h"
+#include "Components/VOFollowingComponent.h"
 
 #include "VOSettings.generated.h"
 
@@ -43,7 +43,7 @@ public:
 	float NDiscreteIntervals = 10;
 
 	UPROPERTY(EditAnywhere, Config, Category="AO")
-	float MinimalReactionTime = 0.01f;
+	float MinimalReactionTime = 0.1f;
 
 	/** Collect names of presets (for BP/Editor). */
 	UFUNCTION(BlueprintCallable, Category="VO|Settings")

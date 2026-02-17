@@ -1,7 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "AIController.h"
-#include "VOFollowingComponent.h"
+#include "Components/VOFollowingComponent.h"
 #include "VOAIController.generated.h"
 
 class UVOFollowingComponent;

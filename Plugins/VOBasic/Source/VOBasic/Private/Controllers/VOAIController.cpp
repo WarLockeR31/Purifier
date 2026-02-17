@@ -1,8 +1,8 @@
-#include "VOAIController.h"
+#include "Controllers/VOAIController.h"
 
-#include "VOConfigProvider.h"
-#include "VOFollowingComponent.h"
-#include "VOSettings.h"
+#include "Settings/VOConfigProvider.h"
+#include "Components/VOFollowingComponent.h"
+#include "Settings/VOSettings.h"
 
 AVOAIController::AVOAIController(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UVOFollowingComponent>(TEXT("PathFollowingComponent")))

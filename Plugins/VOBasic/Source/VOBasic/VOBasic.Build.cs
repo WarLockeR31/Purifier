@@ -38,6 +38,7 @@ public class VOBasic : ModuleRules
 			{
 				"NavigationSystem",
 				"DeveloperSettings",
+				"Navmesh",
 			}
 			);
 		
@@ -48,5 +49,9 @@ public class VOBasic : ModuleRules
 				
 			}
 			);
+		
+		PublicDefinitions.Add("SAVE_VO_PATHS=1");
+		PublicDefinitions.Add("DEBUG_ON=1");
+		PublicDefinitions.Add("AO_SFM_REPULSION=1");
 	}
 }
