@@ -602,9 +602,6 @@ void UVOManager::UpdateAvoidance()
 					DrawDebugLine(Comp->GetWorld(), Pos, Pos + BestAccel, FColor::Green, true, -1.f, 0, 3.f); // Accel
 				}
 			}
-
-
-        	
 #endif
 			continue; // AO Done
 		}
@@ -665,7 +662,6 @@ void UVOManager::GatherNeighbors(
 			}
 		}
 	};
-
 	
 	UVOFollowingComponent* Agent = AgentEntry.Agent;
 	const FVector Pos = Agent->GetOwnerLocation();
@@ -675,12 +671,14 @@ void UVOManager::GatherNeighbors(
     for (FGlobalAgentEntry& It : GlobalAgentList)
     {
        	UVOFollowingComponent* Other = It.Agent;
+    	const FVector& OtherPos = Other->GetOwnerLocation();
        	
        	if (!Other || Other == Agent)
        		continue;
-       	if (FVector::DistSquared2D(Pos, Other->GetOwnerLocation()) > NeighborRangeSqr)
+       	if (FVector::DistSquared2D(Pos, OtherPos) > NeighborRangeSqr)
        		continue;
-	
+    	/*if (FMath::Abs(Pos.Z - OtherPos.Z) >= (height+ag->params.height)/2.0f))
+    		continue;*/
        	// TODO: Add FOV for Agents
 	
        	float t = -1.f;
@@ -700,44 +698,40 @@ void UVOManager::GatherNeighbors(
     }
 
 	// Gather static segments
-	//if (DetourCrowd)
+	const FCrowdContext& dtCtx = ContextMap.FindChecked(AgentEntry.NavData);
+	const dtCrowdAgent* dtAgent = dtCtx.Crowd->getAgent(AgentEntry.DetourAgentIndex);
+	for (int j = 0; j < dtAgent->boundary.getSegmentCount(); ++j)
 	{
-    	const FCrowdContext& dtCtx = ContextMap.FindChecked(AgentEntry.NavData);
-		const dtCrowdAgent* dtAgent = dtCtx.Crowd->getAgent(AgentEntry.DetourAgentIndex);
-		for (int j = 0; j < dtAgent->boundary.getSegmentCount(); ++j)
+		const dtReal* s = dtAgent->boundary.getSegment(j);
+		const dtReal* q = s + 3;
+			
+		if (dtTriArea2D(dtAgent->npos, s, q) < 0.0f)
+			continue;
+			
+		const FVector2D P1 = FVector2D(Recast2UnrealPoint(s));
+		const FVector2D P2 = FVector2D(Recast2UnrealPoint(q));
+		const FVector2D Pos2D = FVector2D(Pos); 
+
+		FVector2D ClosestPt = FMath::ClosestPointOnSegment2D(Pos2D, P1, P2);
+		if (FVector2D::DistSquared(Pos2D, ClosestPt) > NeighborRangeSqr)
+			continue;
+
+		float t = -1.f;
+		switch (Params.AvoidanceStyle)
 		{
-			const dtReal* s = dtAgent->boundary.getSegment(j);
-			const dtReal* q = s + 3;
-			
-			if (dtTriArea2D(dtAgent->npos, s, q) < 0.0f)
-				continue;
-			
-			const FVector2D P1 = FVector2D(Recast2UnrealPoint(s));
-			const FVector2D P2 = FVector2D(Recast2UnrealPoint(q));
-			const FVector2D Pos2D = FVector2D(Pos); 
+		case EAvoidanceStyle::VelocityObstacle:
+			t = CalculateCCT_VO(Agent, Params, P1, P2);
+			break;
+		case EAvoidanceStyle::AccelerationObstacle:
+			t = CalculateCCT_AO(Agent, Params, P1, P2);
+			break;
+		default:
+			continue; 
+		} 
 
-			FVector2D ClosestPt = FMath::ClosestPointOnSegment2D(Pos2D, P1, P2);
-			if (FVector2D::DistSquared(Pos2D, ClosestPt) > NeighborRangeSqr)
-				continue;
-
-			float t = -1.f;
-			switch (Params.AvoidanceStyle)
-			{
-			case EAvoidanceStyle::VelocityObstacle:
-				t = CalculateCCT_VO(Agent, Params, P1, P2);
-				break;
-			case EAvoidanceStyle::AccelerationObstacle:
-				t = CalculateCCT_AO(Agent, Params, P1, P2);
-				break;
-			default:
-				continue; 
-			} 
-
-			Candidates.Add(FCandidate(P1, P2, t));
-			//TryAddCandidate(FCandidate(P1, P2, t));
-		}
+		Candidates.Add(FCandidate(P1, P2, t));
+		//TryAddCandidate(FCandidate(P1, P2, t));
 	}
-	
 
 	Neis.Reserve(Candidates.Num());
 
@@ -1017,10 +1011,10 @@ void UVOManager::DrawAgentPath(const UVOFollowingComponent* Comp, const TArray<F
 			PathHistory[i], 
 			PathHistory[i + 1], 
 			PathColor, 
-			true,  // false = рисовать только на один кадр
+			true,
 			15.f, 
 			0, 
-			2.0f    // Толщина линии
+			2.0f
 		);
 	}
 }
@@ -1263,12 +1257,6 @@ void UVOManager::DebugTick() const
 	
 #if ENABLE_DRAW_DEBUG
 	// on screen debugging
-	/*const dtCrowdAgent* SelectedAgent = NULL;
-	if (DetourAgentDebug->idx >= 0)
-	{
-		dtCrowd* Crowd = ContextMap.FindChecked(GlobalAgentList[DetourAgentDebug->idx].NavData).Crowd;
-		SelectedAgent = Crowd->getAgent(GlobalAgentList[DetourAgentDebug->idx].DetourAgentIndex);
-	}*/
 	const FGlobalAgentEntry* SelectedAgent = NULL;
 	if (DetourAgentDebug->idx >= 0)
 		SelectedAgent = &GlobalAgentList[DetourAgentDebug->idx];
