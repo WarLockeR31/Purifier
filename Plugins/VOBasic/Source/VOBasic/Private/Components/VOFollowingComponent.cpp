@@ -396,9 +396,7 @@ FVector UVOFollowingComponent::GetOwnerLocation() const
 {
 	// TODO: CachedPawn?
 	const APawn* P = GetControlledPawn_Local(this);
-	FVector Result = P ? P->GetActorLocation() : FVector::ZeroVector;
-	Result.Z = 0.f;
-	return Result;
+	return P ? P->GetActorLocation() : FVector::ZeroVector;
 }
 
 FVector UVOFollowingComponent::GetOwnerVelocity() const

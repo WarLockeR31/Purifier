@@ -184,6 +184,7 @@ void UVOManager::RegisterAgent(UVOFollowingComponent* Agent)
 	ANavigationData* NavData = nullptr;
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	// TODO: Maybe give designer a choice?
 	float AgentRadius = Agent->GetAgentRadius();
 	// TODO: Replace hardcode
 	float AgentHeight = 400.f;
@@ -209,10 +210,8 @@ void UVOManager::RegisterAgent(UVOFollowingComponent* Agent)
 	Params.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OBSTACLE_AVOIDANCE;
 	// TODO: Add path optimization counter
 
-	// TODO: Maybe GetCrowdAgentLocation()
-
 	// Add agent in detour
-	FVector Loc = Agent->GetOwnerLocation();
+	FVector Loc = Agent->GetCrowdAgentLocation();
 	FVector RecastLocVec = Unreal2RecastPoint(Loc);
 	dtReal RecastLoc[3];
 	RecastLoc[0] = RecastLocVec.X;
@@ -377,7 +376,7 @@ void UVOManager::PrepareAgentsStep() const
 
 		dtCrowdAgent* ag = (dtCrowdAgent*)Ctx.Crowd->getAgent(Entry.DetourAgentIndex);
 
-		FVector RcLocation = Unreal2RecastPoint(Entry.Agent->GetOwnerLocation());
+		FVector RcLocation = Unreal2RecastPoint(Entry.Agent->GetCrowdAgentLocation());
 		FVector RcVelocity = Unreal2RecastPoint(Entry.Agent->GetOwnerVelocity());
 
 		dtVcopy(ag->npos, &RcLocation.X);
@@ -408,7 +407,6 @@ void UVOManager::UpdateAvoidance()
 	{
 		auto* Comp = GlobalAgentList[i].Agent;
 
-		// TODO: ????
 		if (!Comp) { GlobalAgentList.RemoveAtSwap(i); continue; }
 
 		APawn* P = nullptr;
