@@ -238,8 +238,8 @@ namespace AOUtility
 
 				DrawDebugLine(W, P + Start, P + End, Color, true, -1.f, 0, 3.0f);
 
-				/*// Draw normals
-				FVector Mid = (Start + End) * 0.5f;
+				// Draw normals
+				/*FVector Mid = (Start + End) * 0.5f;
 				FVector Normal(Seg.OutsideNormal.X, Seg.OutsideNormal.Y, 0.f);
 				DrawDebugLine(W, P + Mid, P + Mid + Normal * 20.f, Color, true, -1.f, 0, 1.0f);*/
 			}
@@ -330,23 +330,24 @@ namespace
 		FAOConesSoA& OutCones = *Ctx.Cones;
 
 		for (const FVONeighborView& N : Neis)
-		{
-			float R;
-			if (N.ShapeType == EMinkowskiShapeType::Capsule)
-			{
-				R = 0;
-			}
-			else
-			{
-				R = Params.AgentRadius + N.Radius;
-			}
-			
+		{			
 			const FVector2D pRel(N.Pos.X - ActorPos.X, N.Pos.Y - ActorPos.Y);
 
-			// TODO: For all shapes
-			if (N.ShapeType == EMinkowskiShapeType::Circle && R * R >= pRel.SizeSquared())
+			// TODO: For all shapes, add fallback?
+			switch (N.ShapeType)
 			{
-				continue;
+			case EMinkowskiShapeType::Circle:
+				if (FMath::Square(N.Radius) >= pRel.SizeSquared())
+					continue;
+				break;
+			case EMinkowskiShapeType::Segment:
+				FVector2D Dir = (*Ctx.NeighborVertices)[N.VerticesOffset + 1] - (*Ctx.NeighborVertices)[N.VerticesOffset];
+				FVector2D Normal = FVector2D(Dir.Y, -Dir.X);
+				if (pRel.Dot(Normal) > 0.f)
+					continue;
+				break;
+			default:
+				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)N.ShapeType);
 			}
 
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
@@ -358,7 +359,7 @@ namespace
 			}
 
 			FAOCone Cone;
-			if (ComputeAOCone(R, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
+			if (ComputeAOCone(N.Radius, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
 				OutCones.Add(Cone);
 		}
 	}
@@ -498,11 +499,12 @@ namespace
 						{
 							float DistCenters = FMath::Sqrt(DistCentersSq);
 							e_ij = ToActor / DistCenters; 
-							d_ij = DistCenters - (Params.AgentRadius + Nei.Radius);
+							d_ij = DistCenters - Nei.Radius;
 							bShouldApplyForce = true;
 						}
 						break;
 					}
+				case EMinkowskiShapeType::Segment:
 				case EMinkowskiShapeType::Capsule:
 					{						
 						const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
@@ -556,7 +558,7 @@ namespace
                 		{
                 		   float Dist = FMath::Sqrt(DistSq);
                 		   e_ij = ToActor / Dist;
-                		   d_ij = Dist - (Params.AgentRadius + Nei.Radius);
+                		   d_ij = Dist - Nei.Radius;
                 		   bShouldApplyForce = true;
                 		}
                 		break;
@@ -772,12 +774,25 @@ namespace
 				}
 				break;
 			case EMinkowskiShapeType::Capsule:
-				const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
-				const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
-				if (!AvoidanceMath::TryFindCapsuleTangents(GrazeSourceP, P1, P2, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
 				{
-					LastValidT = t;
-					return;
+					const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset];
+					const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1];
+					if (!AvoidanceMath::TryFindCapsuleTangents(GrazeSourceP, P1, P2, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
+					{
+						LastValidT = t;
+						return;
+					}
+				}
+				break;
+			case EMinkowskiShapeType::Segment:
+				{
+					const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset];
+					const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1];
+					if (!AvoidanceMath::TryFindSegmentTangents(GrazeSourceP, P1, P2, CenterLineP, InvSqrT, PointL, PointR, NormalL, NormalR))
+					{
+						LastValidT = t;
+						return;
+					}
 				}
 				break;
 			default:
@@ -833,12 +848,13 @@ namespace
 		case EMinkowskiShapeType::Circle:
 			ClosestPointOnCore = CenterLineP;
 			break;
+		case EMinkowskiShapeType::Segment:
 		case EMinkowskiShapeType::Capsule:
-			const FVector2D P1_Local = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
-			const FVector2D P2_Local = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
-			const FVector2D P1_Timed = CenterLineP + P1_Local * (2.f * InvSqrT);
-			const FVector2D P2_Timed = CenterLineP + P2_Local * (2.f * InvSqrT);
-			ClosestPointOnCore = FMath::ClosestPointOnSegment2D(GrazeSourceP, P1_Timed, P2_Timed);
+			{
+				const FVector2D P1_Timed = CenterLineP + NeighborVertices[Neighbor.VerticesOffset] * (2.f * InvSqrT);
+				const FVector2D P2_Timed = CenterLineP + NeighborVertices[Neighbor.VerticesOffset + 1] * (2.f * InvSqrT);
+				ClosestPointOnCore = FMath::ClosestPointOnSegment2D(GrazeSourceP, P1_Timed, P2_Timed);
+			}
 			break;
 		default:
 			UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Neighbor.ShapeType);
@@ -1188,12 +1204,18 @@ namespace
 			bHitFound = AvoidanceMath::FindRayCircleIntersection(C, V, R, Tolerance, HitTime);
 			break;
 		case EMinkowskiShapeType::Capsule:
-			const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset] - FVector2D(Neighbor.Pos);
-			const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1] - FVector2D(Neighbor.Pos);
-			const FVector2D S1 = C + P1;
-			const FVector2D S2 = C + P2;
-				
-			bHitFound = AvoidanceMath::FindRayCapsuleIntersection(S1, S2, V, R, Tolerance, HitTime);
+			{
+				const FVector2D P1 = C + NeighborVertices[Neighbor.VerticesOffset];
+				const FVector2D P2 = C + NeighborVertices[Neighbor.VerticesOffset + 1];
+				bHitFound = AvoidanceMath::FindRayCapsuleIntersection(P1, P2, V, R, Tolerance, HitTime);
+			}
+			break;
+		case EMinkowskiShapeType::Segment:
+			{
+				const FVector2D P1 = C + NeighborVertices[Neighbor.VerticesOffset];
+				const FVector2D P2 = C + NeighborVertices[Neighbor.VerticesOffset + 1];
+				bHitFound = AvoidanceMath::FindRaySegmentIntersection(P1, P2, V, Tolerance, HitTime);
+			}
 			break;
 		default:
 			UE_LOG(LogTemp, Warning, TEXT("Unknown shape type in AnalyzeTopology"));

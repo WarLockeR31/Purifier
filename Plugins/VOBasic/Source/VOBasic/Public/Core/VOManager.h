@@ -33,8 +33,8 @@ enum class EMinkowskiShapeType : uint8
 	None,
 	Circle,
 	Capsule,
-	ConvexPolygon,
-	RoundedRectangle,
+	Segment,
+	RoundedQuad,
 };
 
 UENUM(BlueprintType)
@@ -45,6 +45,9 @@ enum class ENeighborType : uint8
 	Dynamic,
 };
 
+/*
+ 
+ */
 USTRUCT()
 struct FVONeighborView
 {
@@ -58,20 +61,18 @@ struct FVONeighborView
 	ENeighborType NeighborType = ENeighborType::None;
 
 	// Shape data: 0 = Circle (uses Pos as center), >0 = Number of vertices in Manager's buffer
-	int32 VerticesOffset = -1;
 	uint8 NumVertices = 0;
+	int32 VerticesOffset = -1;
 
 	FVONeighborView() = default;
 	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, EMinkowskiShapeType ShapeType_)
-	{
-		Pos = Pos_; Vel = Vel_; Acc = Acc_; Radius = Radius_; CCT = CCT_; ShapeType = ShapeType_;
-	}
+		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), ShapeType(ShapeType_) { }
+	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, EMinkowskiShapeType ShapeType_, ENeighborType NeighborType)
+		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), ShapeType(ShapeType_), NeighborType(NeighborType) { }
 
-	static FVONeighborView CreateCircle(const FVector& Pos, const FVector& Vel, const FVector& Acc, float Radius, float CCT)
+	static FVONeighborView CreateCircle(const FVector& Pos, const FVector& Vel, const FVector& Acc, float Radius, float CCT, ENeighborType NeighborType)
 	{
-		FVONeighborView View(Pos, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Circle);
-		View.NumVertices = 0;
-		return View;
+		return FVONeighborView(Pos, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Circle, NeighborType);
 	}
 
 	static FVONeighborView CreateCapsule(const FVector& PosA, const FVector& PosB, const FVector& Vel, const FVector& Acc, float Radius, float CCT, TArray<FVector2D>& VertexBuffer)
@@ -79,22 +80,27 @@ struct FVONeighborView
 		FVONeighborView View((PosA + PosB) * 0.5f, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Capsule);
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
-		VertexBuffer.Add(FVector2D(PosA.X, PosA.Y));
-		VertexBuffer.Add(FVector2D(PosB.X, PosB.Y));
+		FVector OffsetA = PosA - View.Pos;
+		FVector OffsetB = PosB - View.Pos;
+		VertexBuffer.Add(FVector2D(OffsetA.X, OffsetA.Y));
+		VertexBuffer.Add(FVector2D(OffsetB.X, OffsetB.Y));
 		return View;
 	}
 
-	// TEMP
-	static FVONeighborView CreateSeg(const FVector& PosA, const FVector& PosB, float CCT, TArray<FVector2D>& VertexBuffer)
+	static FVONeighborView CreateStaticSegment(const FVector& PosA, const FVector& PosB, float CCT, TArray<FVector2D>& VertexBuffer)
 	{
 		FVONeighborView View;
 		View.Pos = (PosA + PosB) * 0.5f;
 		View.CCT = CCT;
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
-		View.ShapeType = EMinkowskiShapeType::Capsule;
-		VertexBuffer.Add(FVector2D(PosA.X, PosA.Y));
-		VertexBuffer.Add(FVector2D(PosB.X, PosB.Y));
+		View.ShapeType = EMinkowskiShapeType::Segment;
+		View.NeighborType = ENeighborType::Static;
+
+		FVector OffsetA = PosA - View.Pos;
+		FVector OffsetB = PosB - View.Pos;
+		VertexBuffer.Add(FVector2D(OffsetA.X, OffsetA.Y));
+		VertexBuffer.Add(FVector2D(OffsetB.X, OffsetB.Y));
 		return View;
 	}
 };

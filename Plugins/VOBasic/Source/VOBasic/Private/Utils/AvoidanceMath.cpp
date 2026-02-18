@@ -355,6 +355,50 @@ bool AvoidanceMath::FindRayCapsuleIntersection(
     return false;
 }
 
+bool AvoidanceMath::FindRaySegmentIntersection(
+	const FVector2D& S1,
+	const FVector2D& S2,
+	const FVector2D& Vel,
+	float Tolerance,
+	float& OutTime)
+{
+	const float VelSq = Vel.SizeSquared();
+	if (VelSq < KINDA_SMALL_NUMBER)
+		return false;
+
+	const FVector2D Edge = S2 - S1;
+    
+	const float Denom = FVector2D::CrossProduct(Vel, Edge);
+	if (FMath::Abs(Denom) < KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+    
+	// t = (S1 x Edge) / (Vel x Edge)
+	const float t = FVector2D::CrossProduct(S1, Edge) / Denom;
+	// u = (S1 x Vel) / (Vel x Edge)
+	const float u = FVector2D::CrossProduct(S1, Vel) / Denom;
+    
+	const float EdgeLen = Edge.Size();
+	if (EdgeLen < KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float U_Tolerance = Tolerance / EdgeLen;
+
+	const float U_Min = -U_Tolerance;
+	const float U_Max = 1.0 + U_Tolerance;
+
+	if (u >= U_Min && u <= U_Max)
+	{
+		OutTime = (float)t;
+		return true;
+	}
+
+	return false;
+}
+
 bool AvoidanceMath::FindCircleCircleIntersections(
 	const FAOCircle& C1, const FAOCircle& C2, FVector2D& OutP1, FVector2D& OutP2)
 {
@@ -494,4 +538,53 @@ bool AvoidanceMath::TryFindCapsuleTangents(
 	}
 
 	return false;
+}
+
+bool AvoidanceMath::TryFindSegmentTangents(
+    const FVector2D& Source,
+    const FVector2D& C1,
+    const FVector2D& C2,
+    const FVector2D& C,
+    float InvSqrT,
+    FVector2D& PointL,
+    FVector2D& PointR,
+    FVector2D& NormalL,
+    FVector2D& NormalR)
+{
+    FVector2D P1 = C1 * 2 * InvSqrT + C;
+    FVector2D P2 = C2 * 2 * InvSqrT + C;
+
+    FVector2D Edge = P2 - P1;
+    FVector2D RelSource = Source - P1;
+
+    float Cross = Edge ^ RelSource;
+
+    if (Cross > 0.0f)
+    {
+        PointL = P1;
+        PointR = P2;
+    }
+    else
+    {
+        PointL = P2;
+        PointR = P1;
+    }
+    
+    FVector2D DirL = PointL - Source;
+    if (DirL.SizeSquared() < KINDA_SMALL_NUMBER) 
+    {
+        return false;
+    }
+    NormalL.X = -DirL.Y;
+    NormalL.Y = DirL.X;
+
+    FVector2D DirR = PointR - Source;
+    if (DirR.SizeSquared() < KINDA_SMALL_NUMBER) 
+    {
+        return false;
+    }
+    NormalR.X = DirR.Y;
+    NormalR.Y = -DirR.X;
+
+    return true;
 }

@@ -62,6 +62,13 @@ namespace AvoidanceMath
 		float Radius,
 		float Tolerance,
 		float& OutTime);
+
+	VOBASIC_API bool FindRaySegmentIntersection(
+		const FVector2D& S1,     
+		const FVector2D& S2,     
+		const FVector2D& Vel,
+		float Tolerance,
+		float& OutTime);
 #pragma endregion 
 
 	VOBASIC_API bool FindCircleCircleIntersections(
@@ -85,6 +92,16 @@ namespace AvoidanceMath
 		const FVector2D& C2,
 		const FVector2D& C,
 		float R,
+		float InvSqrT,
+		FVector2D& PointL,
+		FVector2D& PointR,
+		FVector2D& NormalL,
+		FVector2D& NormalR);
+	VOBASIC_API bool TryFindSegmentTangents(
+		const FVector2D& Source,
+		const FVector2D& C1,
+		const FVector2D& C2,
+		const FVector2D& C,
 		float InvSqrT,
 		FVector2D& PointL,
 		FVector2D& PointR,
