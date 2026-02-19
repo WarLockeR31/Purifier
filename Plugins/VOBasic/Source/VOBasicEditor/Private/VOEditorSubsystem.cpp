@@ -41,7 +41,7 @@ void UVOEditorSubsystem::Tick(float DeltaTime)
 	}
 }
 
-void UVOEditorSubsystem::DrawForActor(UWorld* World, APawn*Pawn)
+void UVOEditorSubsystem::DrawForActor(UWorld* World, APawn* Pawn)
 {
 	const UVOSettings* Settings = UVOSettings::Get();
 	if (!Settings)
@@ -82,7 +82,66 @@ void UVOEditorSubsystem::DrawForActor(UWorld* World, APawn*Pawn)
 		}
 				
 		FColor Color = FColor::Cyan;
+		const FVector TopOffset(0, 0, Params.AgentHeight);
 
-		DrawDebugCylinder(World, Loc, Loc + FVector(0, 0, Params.AgentHeight), Params.AgentRadius, 16, Color, false, -1.f, 0, 1.f);
+		switch (Params.Shape)
+		{
+		case EVOAgentShape::Circle:
+			DrawDebugCylinder(World, Loc, Loc + TopOffset, Params.AgentRadius, 16, Color, false, -1.f, 0, 1.f);
+			break;
+		case EVOAgentShape::Capsule:
+			FVector2D S1, S2;
+			UVOFollowingComponent::GetAgentCapsuleSegment(Pawn, Params, S1, S2);
+			DrawDebugCapsulePrism(
+				World,
+				FVector(S1.X, S1.Y, Loc.Z),
+				FVector(S2.X, S2.Y, Loc.Z),
+				Params.AgentRadius,
+				Params.AgentHeight,
+				16,
+				FColor::Cyan
+            );
+			break;
+		default:
+			UE_LOG(LogTemp, Warning, TEXT("Unsupported shape: %d"), (int32)Params.Shape);
+		}
 	}
 }
+
+void UVOEditorSubsystem::DrawDebugCapsulePrism(
+	const UWorld* InWorld,
+	FVector const& BaseStart,
+	FVector const& BaseEnd,
+	float Radius,
+	float Height,
+	int32 Segments,
+	FColor const& Color,
+	bool bPersistentLines,
+	float LifeTime,
+	uint8 DepthPriority,
+	float Thickness)
+{
+	if (!InWorld) return;
+
+	const FVector TopOffset(0.f, 0.f, Height);
+
+	DrawDebugCylinder(InWorld, BaseStart, BaseStart + TopOffset, Radius, Segments, Color,
+	   bPersistentLines, LifeTime, DepthPriority, Thickness);
+	DrawDebugCylinder(InWorld, BaseEnd, BaseEnd + TopOffset, Radius, Segments, Color,
+	   bPersistentLines, LifeTime, DepthPriority, Thickness);
+	
+	FVector Dir = (BaseEnd - BaseStart).GetSafeNormal();
+	if (Dir.IsNearlyZero()) return;
+
+	FVector SideOffset = FVector(-Dir.Y, Dir.X, 0.f) * Radius;
+
+	DrawDebugLine(InWorld, BaseStart + SideOffset, BaseEnd + SideOffset, Color,
+	   bPersistentLines, LifeTime, DepthPriority, Thickness);
+	DrawDebugLine(InWorld, BaseStart - SideOffset, BaseEnd - SideOffset, Color,
+	   bPersistentLines, LifeTime, DepthPriority, Thickness);
+	DrawDebugLine(InWorld, BaseStart + TopOffset + SideOffset, BaseEnd + TopOffset +
+	   SideOffset, Color, bPersistentLines, LifeTime, DepthPriority, Thickness);
+	DrawDebugLine(InWorld, BaseStart + TopOffset - SideOffset, BaseEnd + TopOffset -
+	   SideOffset, Color, bPersistentLines, LifeTime, DepthPriority, Thickness);
+}
+

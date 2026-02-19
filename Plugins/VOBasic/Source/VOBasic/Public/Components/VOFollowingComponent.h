@@ -14,6 +14,21 @@ enum class EAvoidanceStyle : uint8
 	AccelerationObstacle,
 };
 
+UENUM(BlueprintType)
+enum class EVOAgentShape : uint8
+{
+	Circle,
+	Capsule,
+};
+
+UENUM(BlueprintType)
+enum class EVOOrientation : uint8
+{
+	Forward,
+	Right,
+	Custom,
+};
+
 USTRUCT(BlueprintType)
 struct FVOParams
 {
@@ -21,7 +36,17 @@ struct FVOParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			TauHorizon		= 0.5f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			MaxSpeed		= 400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			NeighborRange	= 600.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO")  EVOAgentShape	Shape			= EVOAgentShape::Circle;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			AgentRadius		= 34.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+		meta=(EditCondition="Shape==EVOAgentShape::Capsule",
+			EditConditionHides))								float			AgentExtent		= 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+		meta=(EditCondition="Shape==EVOAgentShape::Capsule",
+			EditConditionHides))								EVOOrientation	Orientation		= EVOOrientation::Forward;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+		meta=(EditCondition="Shape==EVOAgentShape::Capsule && Orientation==EVOOrientation::Custom",
+			EditConditionHides, Units="Degrees"))				float			CustomAngle		= 0.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			AgentHeight		= 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO")	EAvoidanceStyle	AvoidanceStyle	= EAvoidanceStyle::VelocityObstacle;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
@@ -41,6 +66,9 @@ enum class EVOParamKey : uint8
 	AgentRadius,
 	MaxAcceleration,
 	AgentHeight,
+	AgentExtent,
+	AgentCustomAngle,
+	TauAcceleration,
 };
 
 UENUM(BlueprintType)
@@ -92,8 +120,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") int32 AddParamModifier(const FVOParamModifier& Mod);
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") bool  RemoveParamModifierById(int32 Id);
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") int32 RemoveParamModifiersByTag(FName Tag);
+	
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAvoidanceStyle(EAvoidanceStyle NewStyle);
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAvoidanceStyle();
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAgentShape(EVOAgentShape NewShape);
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentShape();
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAgentOrientation(EVOOrientation NewOrientation);
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentOrientation();
 
 	UFUNCTION(BlueprintCallable, Category="VO") const FVOParams& GetEffectiveParams() const;
 
@@ -117,7 +150,9 @@ public:
 	bool			HasVOGoal()			const	{ return bHasGoal; }
 	//FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
 	EAvoidanceStyle GetAvoidanceStyle() const	{ return GetEffectiveParams().AvoidanceStyle; }
-
+	void			GetAgentCapsuleSegment(FVector2D& OutP1, FVector2D& OutP2) const;
+	static void		GetAgentCapsuleSegment(const APawn* Pawn, const FVOParams& Params, FVector2D& OutP1, FVector2D& OutP2);
+	
 	void			UpdateKinematics(float DeltaTime);
 	FVector			GetCachedVelocity()		const { return CachedVelocity; }
 	FVector			GetCachedAcceleration() const { return CachedAcceleration; }
@@ -154,6 +189,12 @@ private:
 
 	bool			bHasAvoidanceStyleOverride	= false;
 	EAvoidanceStyle AvoidanceStyleOverride		= EAvoidanceStyle::VelocityObstacle;
+
+	bool			bHasShapeOverride			= false;
+	EVOAgentShape	ShapeOverride				= EVOAgentShape::Circle;
+
+	bool			bHasOrientationOverride		= false;
+	EVOOrientation	OrientationOverride			= EVOOrientation::Forward;
 	
 	bool    bHasGoal = false;
 	FVector Goal     = FVector::ZeroVector;

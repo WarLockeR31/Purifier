@@ -28,4 +28,16 @@ public:
 
 private:
 	void DrawForActor(UWorld* World, APawn*Pawn);
+	void DrawDebugCapsulePrism(
+ 		const UWorld* InWorld,
+ 		FVector const& BaseStart,   
+ 		FVector const& BaseEnd,     
+ 		float Radius,
+ 		float Height,
+ 		int32 Segments,
+ 		FColor const& Color,
+ 		bool bPersistentLines = false,
+    	float LifeTime = -1.f,
+    	uint8 DepthPriority = 0,
+    	float Thickness = 0.f);
 };

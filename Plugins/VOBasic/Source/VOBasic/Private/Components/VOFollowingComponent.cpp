@@ -322,6 +322,31 @@ void UVOFollowingComponent::ResetAvoidanceStyle()
 	MarkEffectiveDirty();
 }
 
+void UVOFollowingComponent::SetAgentShape(EVOAgentShape NewShape)
+{
+	EffectiveParams.Shape = NewShape; // For instant application
+	ShapeOverride = NewShape;
+	bHasShapeOverride = true;
+}
+
+void UVOFollowingComponent::ResetAgentShape()
+{
+	bHasShapeOverride = false;
+	MarkEffectiveDirty();
+}
+
+void UVOFollowingComponent::SetAgentOrientation(EVOOrientation NewOrientation)
+{
+	EffectiveParams.Orientation = NewOrientation; // For instant application
+	OrientationOverride = NewOrientation;
+	bHasOrientationOverride = true;
+}
+
+void UVOFollowingComponent::ResetAgentOrientation()
+{
+	bHasShapeOverride = false;
+	MarkEffectiveDirty();
+}
 
 const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 {
@@ -348,15 +373,25 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 	}
 
 	// Clamp values
-	EffectiveParams.AgentRadius   = FMath::Max(0.f, EffectiveParams.AgentRadius);
-	EffectiveParams.MaxSpeed      = FMath::Max(0.f, EffectiveParams.MaxSpeed);
-	EffectiveParams.NeighborRange = FMath::Max(0.f, EffectiveParams.NeighborRange);
-	EffectiveParams.TauHorizon    = FMath::Max(0.01f, EffectiveParams.TauHorizon);
+	EffectiveParams.AgentRadius		= FMath::Max(0.f, EffectiveParams.AgentRadius);
+	EffectiveParams.AgentExtent		= FMath::Max(0.f, EffectiveParams.AgentExtent);
+	EffectiveParams.AgentHeight		= FMath::Max(0.f, EffectiveParams.AgentHeight);
+	EffectiveParams.MaxSpeed		= FMath::Max(0.f, EffectiveParams.MaxSpeed);
+	EffectiveParams.NeighborRange	= FMath::Max(0.f, EffectiveParams.NeighborRange);
+	EffectiveParams.TauHorizon		= FMath::Max(0.01f, EffectiveParams.TauHorizon);
 	EffectiveParams.MaxAcceleration = FMath::Max(0.f, EffectiveParams.MaxAcceleration);
+	EffectiveParams.CustomAngle		= FMath::Max(0.f, EffectiveParams.CustomAngle);
+	EffectiveParams.TauAcceleration = FMath::Max(0.f, EffectiveParams.TauAcceleration);
 
 	// Apply avoidance style override
 	if (bHasAvoidanceStyleOverride)
 		EffectiveParams.AvoidanceStyle = AvoidanceStyleOverride;
+
+	if (bHasShapeOverride)
+		EffectiveParams.Shape = ShapeOverride;
+
+	if (bHasOrientationOverride)
+		EffectiveParams.Orientation = OrientationOverride;
 	
 	bEffectiveDirty = false;
 	return EffectiveParams;
@@ -381,9 +416,11 @@ void UVOFollowingComponent::ApplyModifierTo(FVOParams& P, const FVOParamModifier
 		case EVOParamKey::MaxSpeed:      	ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); 	break;
 		case EVOParamKey::NeighborRange: 	ApplyOp(P.NeighborRange, M.Op, M.Magnitude); 	break;
 		case EVOParamKey::AgentRadius:   	ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); 	break;
-		case EVOParamKey::AgentHeight:		ApplyOp(P.AgentHeight,M.Op, M.Magnitude); 	break;
-
+		case EVOParamKey::AgentExtent:   	ApplyOp(P.AgentExtent,   M.Op, M.Magnitude); 	break;
+		case EVOParamKey::AgentCustomAngle: ApplyOp(P.CustomAngle, M.Op, M.Magnitude); 		break;
+		case EVOParamKey::AgentHeight:		ApplyOp(P.AgentHeight,M.Op, M.Magnitude); 		break;
 		case EVOParamKey::MaxAcceleration:	ApplyOp(P.MaxAcceleration, M.Op, M.Magnitude);	break;
+		case EVOParamKey::TauAcceleration:  ApplyOp(P.TauAcceleration, M.Op, M.Magnitude); 	break;
 	}
 }
 
@@ -414,6 +451,67 @@ FVector UVOFollowingComponent::GetOwnerVelocity() const
 		return Move->Velocity;
 	}
 	return FVector::ZeroVector;
+}
+
+void UVOFollowingComponent::GetAgentCapsuleSegment(FVector2D& OutP1, FVector2D& OutP2) const
+{
+	APawn* Pawn = GetControlledPawn_Local(this);
+	FVector2D WorldPos = FVector2D(Pawn->GetActorLocation());
+
+	if (Params.Shape == EVOAgentShape::Circle || Params.AgentExtent <= KINDA_SMALL_NUMBER)
+	{
+		OutP1 = OutP2 = WorldPos;
+		return;
+	}
+
+	FVector2D WorldAxis;
+	switch (Params.Orientation)
+	{
+	case EVOOrientation::Forward: WorldAxis = FVector2D(Pawn->GetActorForwardVector()); break;
+	case EVOOrientation::Right:   WorldAxis = FVector2D(Pawn->GetActorRightVector()); break;
+	case EVOOrientation::Custom:
+		{
+			float Rad = FMath::DegreesToRadians(Params.CustomAngle);
+			FVector2D RotatedDir(FMath::Cos(Rad), FMath::Sin(Rad));
+			WorldAxis = FVector2D(Pawn->GetActorForwardVector()) * RotatedDir.X + FVector2D(Pawn->GetActorRightVector()) * RotatedDir.Y;
+		}
+		break;
+	default: UE_LOG(LogVOFollowing, Error, TEXT("Invalid orientation for agent capsule!")); return;
+	}
+
+	FVector2D Offset = WorldAxis * Params.AgentExtent;
+	OutP1 = WorldPos - Offset;
+	OutP2 = WorldPos + Offset;
+}
+
+void UVOFollowingComponent::GetAgentCapsuleSegment(const APawn* Pawn, const FVOParams& Params, FVector2D& OutP1, FVector2D& OutP2)
+{
+	FVector2D WorldPos = FVector2D(Pawn->GetActorLocation());
+
+	if (Params.Shape == EVOAgentShape::Circle || Params.AgentExtent <= KINDA_SMALL_NUMBER)
+	{
+		OutP1 = OutP2 = WorldPos;
+		return;
+	}
+
+	FVector2D WorldAxis;
+	switch (Params.Orientation)
+	{
+		case EVOOrientation::Forward: WorldAxis = FVector2D(Pawn->GetActorForwardVector()); break;
+		case EVOOrientation::Right:   WorldAxis = FVector2D(Pawn->GetActorRightVector()); break;
+		case EVOOrientation::Custom:
+			{
+				float Rad = FMath::DegreesToRadians(Params.CustomAngle);
+				FVector2D RotatedDir(FMath::Cos(Rad), FMath::Sin(Rad));
+				WorldAxis = FVector2D(Pawn->GetActorForwardVector()) * RotatedDir.X + FVector2D(Pawn->GetActorRightVector()) * RotatedDir.Y;
+			}
+			break;
+		default: UE_LOG(LogVOFollowing, Error, TEXT("Invalid orientation for agent capsule!")); return;
+	}
+
+	FVector2D Offset = WorldAxis * Params.AgentExtent;
+	OutP1 = WorldPos - Offset;
+	OutP2 = WorldPos + Offset;
 }
 
 void UVOFollowingComponent::UpdateKinematics(float DeltaTime)
