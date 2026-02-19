@@ -677,8 +677,8 @@ void UVOManager::GatherNeighbors(
        		continue;
        	if (FVector::DistSquared2D(Pos, OtherPos) > NeighborRangeSqr)
        		continue;
-    	/*if (FMath::Abs(Pos.Z - OtherPos.Z) >= (height+ag->params.height)/2.0f))
-    		continue;*/
+    	if (FMath::Abs(Pos.Z - OtherPos.Z) >= (Params.AgentHeight+Other->GetAgentHeight()) / 2.0f)
+    		continue;
        	// TODO: Add FOV for Agents
 	
        	float t = -1.f;

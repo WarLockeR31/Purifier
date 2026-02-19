@@ -22,6 +22,7 @@ struct FVOParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			MaxSpeed		= 400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			NeighborRange	= 600.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			AgentRadius		= 34.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO") 	float 			AgentHeight		= 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO")	EAvoidanceStyle	AvoidanceStyle	= EAvoidanceStyle::VelocityObstacle;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
 		meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
@@ -39,6 +40,7 @@ enum class EVOParamKey : uint8
 	NeighborRange,
 	AgentRadius,
 	MaxAcceleration,
+	AgentHeight,
 };
 
 UENUM(BlueprintType)
@@ -111,6 +113,7 @@ public:
 	FVector 		GetOwnerLocation()	const;
 	FVector 		GetOwnerVelocity()	const;
 	float   		GetAgentRadius()	const	{ return GetEffectiveParams().AgentRadius; }
+	float			GetAgentHeight()	const	{ return GetEffectiveParams().AgentHeight; }
 	bool			HasVOGoal()			const	{ return bHasGoal; }
 	//FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
 	EAvoidanceStyle GetAvoidanceStyle() const	{ return GetEffectiveParams().AvoidanceStyle; }

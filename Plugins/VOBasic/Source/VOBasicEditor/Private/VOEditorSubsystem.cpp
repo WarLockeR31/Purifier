@@ -83,6 +83,6 @@ void UVOEditorSubsystem::DrawForActor(UWorld* World, APawn*Pawn)
 				
 		FColor Color = FColor::Cyan;
 
-		DrawDebugCylinder(World, Loc, Loc + FVector(0, 0, 10), Params.AgentRadius, 16, Color, false, -1.f, 0, 1.f);
+		DrawDebugCylinder(World, Loc, Loc + FVector(0, 0, Params.AgentHeight), Params.AgentRadius, 16, Color, false, -1.f, 0, 1.f);
 	}
 }

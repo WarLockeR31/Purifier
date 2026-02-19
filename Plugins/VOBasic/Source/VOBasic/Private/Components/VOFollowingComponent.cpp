@@ -381,6 +381,7 @@ void UVOFollowingComponent::ApplyModifierTo(FVOParams& P, const FVOParamModifier
 		case EVOParamKey::MaxSpeed:      	ApplyOp(P.MaxSpeed,      M.Op, M.Magnitude); 	break;
 		case EVOParamKey::NeighborRange: 	ApplyOp(P.NeighborRange, M.Op, M.Magnitude); 	break;
 		case EVOParamKey::AgentRadius:   	ApplyOp(P.AgentRadius,   M.Op, M.Magnitude); 	break;
+		case EVOParamKey::AgentHeight:		ApplyOp(P.AgentHeight,M.Op, M.Magnitude); 	break;
 
 		case EVOParamKey::MaxAcceleration:	ApplyOp(P.MaxAcceleration, M.Op, M.Magnitude);	break;
 	}
