@@ -341,10 +341,19 @@ namespace
 					continue;
 				break;
 			case EMinkowskiShapeType::Segment:
-				FVector2D Dir = (*Ctx.NeighborVertices)[N.VerticesOffset + 1] - (*Ctx.NeighborVertices)[N.VerticesOffset];
-				FVector2D Normal = FVector2D(Dir.Y, -Dir.X);
-				if (pRel.Dot(Normal) > 0.f)
-					continue;
+				{
+					FVector2D Dir = (*Ctx.NeighborVertices)[N.VerticesOffset + 1] - (*Ctx.NeighborVertices)[N.VerticesOffset];
+					FVector2D Normal = FVector2D(Dir.Y, -Dir.X);
+					if (pRel.Dot(Normal) > 0.f)
+						continue;
+				}
+				break;
+			case EMinkowskiShapeType::Capsule:
+				{
+					FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(pRel, (*Ctx.NeighborVertices)[N.VerticesOffset], (*Ctx.NeighborVertices)[N.VerticesOffset + 1]);
+					if (FMath::Square(N.Radius) >= FVector2D::DistSquared(pRel, ClosestPoint))
+						continue;
+				}
 				break;
 			default:
 				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)N.ShapeType);
