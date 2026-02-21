@@ -355,6 +355,20 @@ namespace
 						continue;
 				}
 				break;
+			case EMinkowskiShapeType::RoundedQuad:
+				{
+					if (AvoidanceMath::IsPointInRoundedQuad(
+						pRel,
+						(*Ctx.NeighborVertices)[N.VerticesOffset],
+						(*Ctx.NeighborVertices)[N.VerticesOffset + 1],
+						(*Ctx.NeighborVertices)[N.VerticesOffset + 2],
+						(*Ctx.NeighborVertices)[N.VerticesOffset + 3],
+						N.Radius))
+					{
+						continue;
+					}
+				}
+				break;
 			default:
 				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)N.ShapeType);
 			}
@@ -368,7 +382,9 @@ namespace
 			}
 
 			FAOCone Cone;
-			if (ComputeAOCone(N.Radius, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
+			bool bConeWasBuilt = ComputeAOCone(N.Radius, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone);
+			UE_LOG(LogTemp, Log, TEXT("Cone was built: %d"), bConeWasBuilt);
+			if (bConeWasBuilt)
 				OutCones.Add(Cone);
 		}
 	}
@@ -572,6 +588,96 @@ namespace
                 		}
                 		break;
 					}
+				case EMinkowskiShapeType::RoundedQuad:
+    				{
+    				    const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
+    				    FVector2D ActorPos2D = FVector2D(ActorPos);
+    				    
+    				    float MinDistSq = -1.f;
+    				    FVector2D BestClosestPoint = FVector2D::ZeroVector;
+    				    bool bBestIsVertex = false;
+				
+    				    bool bHasPositiveCross = false;
+    				    bool bHasNegativeCross = false;
+				
+    				    const int32 NumQuadVertices = 4;
+    				    for (int32 i = 0; i < NumQuadVertices; ++i)
+    				    {
+    				        FVector2D V0 = NeiVertices[Nei.VerticesOffset + i];
+    				        FVector2D V1 = NeiVertices[Nei.VerticesOffset + ((i + 1) % NumQuadVertices)];
+				
+    				        FVector2D SegDir = V1 - V0;
+    				        float SegLenSq = SegDir.SizeSquared();
+    				        
+    				        FVector2D V0ToActor = ActorPos2D - V0;
+				
+    				        float CrossZ = SegDir.X * V0ToActor.Y - SegDir.Y * V0ToActor.X;
+    				        if (CrossZ > 0.f) bHasPositiveCross = true;
+    				        if (CrossZ < 0.f) bHasNegativeCross = true;
+				
+    				        float t = 0.f;
+    				        if (SegLenSq > KINDA_SMALL_NUMBER)
+    				        {
+    				            t = FVector2D::DotProduct(V0ToActor, SegDir) / SegLenSq;
+    				        }
+    				        
+    				        float t_clamped = FMath::Clamp(t, 0.f, 1.f);
+    				        FVector2D ClosestPoint = V0 + SegDir * t_clamped;
+				
+    				        float DistSq = (ActorPos2D - ClosestPoint).SizeSquared();
+    				        
+    				        if (MinDistSq < 0.f || DistSq < MinDistSq)
+    				        {
+    				            MinDistSq = DistSq;
+    				            BestClosestPoint = ClosestPoint;
+    				            bBestIsVertex = (t_clamped < KINDA_SMALL_NUMBER || t_clamped > (1.0f - KINDA_SMALL_NUMBER));
+    				        }
+    				    }
+
+						// TODO: Only 1 check (CCW)
+    				    bool bIsInside = !(bHasPositiveCross && bHasNegativeCross);
+				
+    				    // Deduplication
+    				    if (bBestIsVertex)
+    				    {
+    				        bool bAlreadyProcessed = false;
+    				        for (const FVector2D& ProcessedV : ProcessedVertices)
+    				        {
+    				            if (FVector2D::DistSquared(ProcessedV, BestClosestPoint) < VertexMergeThresholdSq)
+    				            {
+    				                bAlreadyProcessed = true;
+    				                break;
+    				            }
+    				        }
+				
+    				        if (bAlreadyProcessed)
+    				        {
+    				            continue; 
+    				        }
+    				        else
+    				        {
+    				            ProcessedVertices.Add(BestClosestPoint);
+    				        }
+    				    }
+				
+    				    if (MinDistSq > KINDA_SMALL_NUMBER)
+    				    {
+    				        float Dist = FMath::Sqrt(MinDistSq);
+    				        
+    				        if (bIsInside)
+    				        {
+    				            e_ij = (BestClosestPoint - ActorPos2D) / Dist;
+    				            d_ij = -(Dist + Nei.Radius); 
+    				        }
+    				        else // Outside
+    				        {
+    				            e_ij = (ActorPos2D - BestClosestPoint) / Dist;
+    				            d_ij = Dist - Nei.Radius;
+    				        }
+    				        bShouldApplyForce = true;
+    				    }
+    				}
+					break;
 				default:
 					UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Nei.ShapeType);
 				}
@@ -601,6 +707,7 @@ namespace
 					
 							Repulsion = e_ij * (ForceLong + ForceShort);
 						}
+						break;
 					default:
 						UE_LOG(LogTemp, Warning, TEXT("Unknown neighbor type %d"), (int32)Nei.NeighborType);
 					}
@@ -715,16 +822,17 @@ namespace
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::AnalyzeTopology);
 			Builder.AnalyzeTopology();
 		}
-		/*if (Builder.bHasTHOverride)
+		if (Builder.bHasTHOverride)
 		{
-			//UE_LOG(LogTemp, Warning, TEXT("TH Override: %f"), Builder.THEffective);
-		}*/
+			UE_LOG(LogTemp, Warning, TEXT("TH Override: %f"), Builder.THEffective);
+		}
 
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::SampleBoundaries);
 			Builder.SampleBoundaries();
 		}
 
+		UE_LOG(LogTemp, Warning, TEXT("U1"));
 		if (Builder.PointsL.Num() == 0)
 			return false;
 
@@ -744,6 +852,8 @@ namespace
 			Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
 		}
 
+		UE_LOG(LogTemp, Warning, TEXT("U2"));
+
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::Validation&Finalization);
 			if (Builder.ValidateShape())
@@ -753,6 +863,8 @@ namespace
 				return true;
 			}
 		}
+
+		UE_LOG(LogTemp, Warning, TEXT("U3"));
 		
 		return false;
 	}
@@ -798,6 +910,21 @@ namespace
 					const FVector2D P1 = NeighborVertices[Neighbor.VerticesOffset];
 					const FVector2D P2 = NeighborVertices[Neighbor.VerticesOffset + 1];
 					if (!AvoidanceMath::TryFindSegmentTangents(GrazeSourceP, P1, P2, CenterLineP, InvSqrT, PointL, PointR, NormalL, NormalR))
+					{
+						LastValidT = t;
+						return;
+					}
+				}
+				break;
+			case EMinkowskiShapeType::RoundedQuad:
+				{
+					const FVector2D& P1 = NeighborVertices[Neighbor.VerticesOffset];
+					const FVector2D& P2 = NeighborVertices[Neighbor.VerticesOffset + 1];
+					const FVector2D& P3 = NeighborVertices[Neighbor.VerticesOffset + 2];
+					const FVector2D& P4 = NeighborVertices[Neighbor.VerticesOffset + 3];
+					UE_LOG(LogTemp, Warning, TEXT("P1: %f, %f; P2: %f, %f; P3: %f, %f; P4: %f, %f"),
+						P1.X, P1.Y, P2.X, P2.Y, P3.X, P3.Y, P4.X, P4.Y)
+					if (!AvoidanceMath::TryFindRoundedQuadTangents(GrazeSourceP, P1, P2, P3, P4, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
 					{
 						LastValidT = t;
 						return;
@@ -865,6 +992,54 @@ namespace
 				ClosestPointOnCore = FMath::ClosestPointOnSegment2D(GrazeSourceP, P1_Timed, P2_Timed);
 			}
 			break;
+		case EMinkowskiShapeType::RoundedQuad:
+    		{
+    		    FVector2D P[4];
+    		    for (int32 i = 0; i < 4; ++i)
+    		    {
+    		        P[i] = CenterLineP + NeighborVertices[Neighbor.VerticesOffset + i] * (2.f * InvSqrT);
+    		    }
+		
+    		    float MinDistSq = -1.f;
+    		    FVector2D BestPoint = FVector2D::ZeroVector;
+    		    
+    		    bool bHasPositiveCross = false;
+    		    bool bHasNegativeCross = false;
+		
+    		    for (int32 i = 0; i < 4; ++i)
+    		    {
+    		        FVector2D V0 = P[i];
+    		        FVector2D V1 = P[(i + 1) % 4];
+		
+    		        FVector2D EdgeDir = V1 - V0;
+    		        FVector2D V0ToSource = GrazeSourceP - V0;
+    		        float CrossZ = EdgeDir ^ V0ToSource; 
+		
+    		        if (CrossZ > 0.f) bHasPositiveCross = true;
+    		        if (CrossZ < 0.f) bHasNegativeCross = true;
+		
+    		        FVector2D ClosestOnEdge = FMath::ClosestPointOnSegment2D(GrazeSourceP, V0, V1);
+    		        float DistSq = (GrazeSourceP - ClosestOnEdge).SizeSquared();
+		
+    		        if (MinDistSq < 0.f || DistSq < MinDistSq)
+    		        {
+    		            MinDistSq = DistSq;
+    		            BestPoint = ClosestOnEdge;
+    		        }
+    		    }
+		
+    		    bool bIsInside = !(bHasPositiveCross && bHasNegativeCross);
+		
+    		    if (bIsInside)
+    		    {
+    		        ClosestPointOnCore = GrazeSourceP; 
+    		    }
+    		    else
+    		    {
+    		        ClosestPointOnCore = BestPoint;
+    		    }
+    		}
+    		break;
 		default:
 			UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)Neighbor.ShapeType);
 			break;
@@ -1224,6 +1399,15 @@ namespace
 				const FVector2D P1 = C + NeighborVertices[Neighbor.VerticesOffset];
 				const FVector2D P2 = C + NeighborVertices[Neighbor.VerticesOffset + 1];
 				bHitFound = AvoidanceMath::FindRaySegmentIntersection(P1, P2, V, Tolerance, HitTime);
+			}
+			break;
+		case EMinkowskiShapeType::RoundedQuad:
+			{
+				const FVector2D P1 = C + NeighborVertices[Neighbor.VerticesOffset];
+				const FVector2D P2 = C + NeighborVertices[Neighbor.VerticesOffset + 1];
+				const FVector2D P3 = C + NeighborVertices[Neighbor.VerticesOffset + 2];
+				const FVector2D P4 = C + NeighborVertices[Neighbor.VerticesOffset + 3];
+				bHitFound = AvoidanceMath::FindRayRoundedQuadIntersection(P1, P2, P3, P4, V, R, Tolerance, HitTime);
 			}
 			break;
 		default:

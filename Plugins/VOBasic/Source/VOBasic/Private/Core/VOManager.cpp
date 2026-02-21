@@ -737,14 +737,68 @@ void UVOManager::GatherNeighbors(
 
 	for (const FCandidate& Cand : Candidates)
 	{
+		// TODO: 2D Coords & Vectors
 		if (Cand.bIsAgent)
 		{
-			FVector NPos = Cand.AgentComp->GetOwnerLocation();
-			FVector NVel = Cand.AgentComp->GetCachedVelocity();
-			FVector NAcc = Cand.AgentComp->GetCachedAcceleration();
-			float MinkRadius = Cand.AgentComp->GetAgentRadius() + Params.AgentRadius;
+			UVOFollowingComponent* Other = Cand.AgentComp;
+			const FVOParams& OtherParams = Other->GetEffectiveParams();
 
-			Neis.Add(FVONeighborView::CreateCircle(NPos, NVel, NAcc, MinkRadius, Cand.t, ENeighborType::Dynamic));
+			FVector NVel = Other->GetCachedVelocity();
+			FVector NAcc = Other->GetCachedAcceleration();
+			float MinkRadius = Params.AgentRadius + OtherParams.AgentRadius;
+
+			const EVOAgentShape AgentShape = Params.Shape;
+			const EVOAgentShape OtherAgentShape = OtherParams.Shape;
+			
+			if (AgentShape == EVOAgentShape::Capsule && OtherAgentShape == EVOAgentShape::Capsule)
+			{
+				// Capsule + Capsule = RoundedQuad
+				FVector2D A1, B1, A2, B2;
+				Agent->GetAgentCapsuleSegmentLocal(A1, B1);
+				Other->GetAgentCapsuleSegment(A2, B2);
+
+				FVector2D P1 = A1 + A2;
+				FVector2D P2 = B1 + A2;
+				FVector2D P3 = B1 + B2;
+				FVector2D P4 = A1 + B2;
+
+				FVector2D D1 = B1 - A1;
+				FVector2D D2 = B2 - A2;
+				if (FVector2D::CrossProduct(D1, D2) < 0.f)
+				{
+					// Swap vertices to maintain CCW winding.
+					Swap(P2, P4);
+				}
+				Neis.Add(FVONeighborView::CreateRoundedQuad(P1, P2, P3, P4, NVel, NAcc, MinkRadius, Cand.t, NeighborVerticesBuffer));
+			}
+			else if (AgentShape == EVOAgentShape::Capsule || OtherAgentShape == EVOAgentShape::Capsule)
+			{
+				// Capsule + Circle = Capsule
+				FVector2D SegA_world, SegB_world;
+				const float WorldZ = Other->GetOwnerLocation().Z;
+
+				if (AgentShape == EVOAgentShape::Capsule)
+				{
+					// Agent is Capsule, Other is Circle
+					FVector2D A1, B1;
+					Agent->GetAgentCapsuleSegmentLocal(A1, B1);
+					FVector2D P2(Other->GetOwnerLocation());
+					SegA_world = A1 + P2;
+					SegB_world = B1 + P2;
+				}
+				else // OtherAgentShape is Capsule
+				{
+					// Agent is Circle, Other is Capsule
+					Other->GetAgentCapsuleSegment(SegA_world, SegB_world);
+				}
+				Neis.Add(FVONeighborView::CreateCapsule(FVector(SegA_world.X, SegA_world.Y, WorldZ), FVector(SegB_world.X, SegB_world.Y, WorldZ), NVel, NAcc, MinkRadius, Cand.t, NeighborVerticesBuffer));
+			}
+			else
+			{
+				// Circle + Circle = Circle.
+				FVector NPos = Other->GetOwnerLocation();
+				Neis.Add(FVONeighborView::CreateCircle(NPos, NVel, NAcc, MinkRadius, Cand.t, ENeighborType::Dynamic));
+			}
 		}
 		else
 		{

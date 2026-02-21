@@ -151,6 +151,7 @@ public:
 	//FVector			GetMoveGoal()		const	{ return Goal; } // TODO: Fix hiding?
 	EAvoidanceStyle GetAvoidanceStyle() const	{ return GetEffectiveParams().AvoidanceStyle; }
 	void			GetAgentCapsuleSegment(FVector2D& OutP1, FVector2D& OutP2) const;
+	void			GetAgentCapsuleSegmentLocal(FVector2D& OutP1, FVector2D& OutP2) const;
 	static void		GetAgentCapsuleSegment(const APawn* Pawn, const FVOParams& Params, FVector2D& OutP1, FVector2D& OutP2);
 	
 	void			UpdateKinematics(float DeltaTime);

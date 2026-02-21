@@ -374,9 +374,7 @@ bool AvoidanceMath::FindRaySegmentIntersection(
 		return false;
 	}
     
-	// t = (S1 x Edge) / (Vel x Edge)
 	const float t = FVector2D::CrossProduct(S1, Edge) / Denom;
-	// u = (S1 x Vel) / (Vel x Edge)
 	const float u = FVector2D::CrossProduct(S1, Vel) / Denom;
     
 	const float EdgeLen = Edge.Size();
@@ -397,6 +395,154 @@ bool AvoidanceMath::FindRaySegmentIntersection(
 	}
 
 	return false;
+}
+
+bool AvoidanceMath::FindRayRoundedQuadIntersection(
+	const FVector2D& P1,
+	const FVector2D& P2,
+	const FVector2D& P3,
+	const FVector2D& P4,
+	const FVector2D& Vel,
+	float Radius,
+	float Tolerance,
+	float& OutTime)
+{
+	const double VelSq = Vel.SizeSquared();
+    if (VelSq < KINDA_SMALL_NUMBER)
+        return false;
+
+    float BestT = MAX_flt;
+    bool bFound = false;
+
+    float R = Radius + Tolerance;
+
+    const FVector2D Points[4] = { P1, P2, P3, P4 };
+
+    // Edges
+    for (int i = 0; i < 4; ++i)
+    {
+        const FVector2D& P_curr = Points[i];
+        const FVector2D& P_next = Points[(i + 1) % 4];
+
+        const FVector2D Edge = P_next - P_curr;
+        const double EdgeLenSq = Edge.SizeSquared();
+
+        if (EdgeLenSq > KINDA_SMALL_NUMBER)
+        {
+            FVector2D EdgeNormal(-Edge.Y, Edge.X);
+            const FVector2D N = EdgeNormal.GetSafeNormal();
+            
+            const double VelProj = FVector2D::DotProduct(Vel, N);
+
+            if (FMath::Abs(VelProj) > KINDA_SMALL_NUMBER)
+            {
+                const double DistProj = FVector2D::DotProduct(P_curr, N);
+                const float t_edge = (DistProj + R) / VelProj;
+
+                const FVector2D HitPos = Vel * t_edge;
+                
+                const float t_proj = FVector2D::DotProduct(HitPos - P_curr, Edge) / EdgeLenSq;
+
+                if (t_proj >= 0.f && t_proj <= 1.f)
+                {
+                    if (t_edge < BestT)
+                    {
+                        BestT = t_edge;
+                        bFound = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Corners (circles)
+    auto CheckVertex = [&](const FVector2D& Vert)
+    {
+        float B = -2.f * FVector2D::DotProduct(Vel, Vert);
+        float C_Val = Vert.SizeSquared() - FMath::Square(R);
+        float Discr = FMath::Square(B) - 4.f * VelSq * C_Val;
+
+        if (Discr >= 0.f)
+        {
+            float t = (-B - FMath::Sqrt(Discr)) / (2.f * VelSq);
+            
+            if (t < BestT)
+            {
+                BestT = t;
+                bFound = true;
+            }
+        }
+    };
+
+    for (int i = 0; i < 4; ++i)
+    {
+        CheckVertex(Points[i]);
+    }
+
+    if (bFound)
+    {
+        OutTime = BestT;
+        return true;
+    }
+
+    return false;
+}
+
+bool AvoidanceMath::IsPointInRoundedQuad(
+	const FVector2D& Point,
+	const FVector2D& P1,
+	const FVector2D& P2,
+	const FVector2D& P3,
+	const FVector2D& P4,
+	float Radius)
+{
+	const FVector2D Points[4] = { P1, P2, P3, P4 };
+	const float RadiusSq = FMath::Square(Radius);
+    
+	bool bAllPositive = true;
+	bool bAllNegative = true;
+    
+	float MinDistSq = MAX_flt;
+
+	for (int i = 0; i < 4; ++i)
+	{
+		const FVector2D& A = Points[i];
+		const FVector2D& B = Points[(i + 1) % 4];
+        
+		const FVector2D AB = B - A;
+		const FVector2D AP = Point - A;
+        
+		const double Cross = FVector2D::CrossProduct(AB, AP);
+        
+		if (Cross < 0.0) bAllPositive = false;
+		if (Cross > 0.0) bAllNegative = false;
+        
+		const double EdgeLenSq = AB.SizeSquared();
+		float DistSq;
+        
+		if (EdgeLenSq < KINDA_SMALL_NUMBER)
+		{
+			DistSq = AP.SizeSquared();
+		}
+		else
+		{
+			const double t = FMath::Clamp(FVector2D::DotProduct(AP, AB) / EdgeLenSq, 0.0, 1.0);
+			const FVector2D Projection = A + AB * t;
+			DistSq = (Point - Projection).SizeSquared();
+		}
+        
+		if (DistSq < MinDistSq)
+		{
+			MinDistSq = DistSq;
+		}
+	}
+    
+	if (bAllPositive || bAllNegative)
+	{
+		return true;
+	}
+    
+	return MinDistSq <= RadiusSq;
 }
 
 bool AvoidanceMath::FindCircleCircleIntersections(
@@ -587,4 +733,75 @@ bool AvoidanceMath::TryFindSegmentTangents(
     NormalR.Y = -DirR.X;
 
     return true;
+}
+
+bool AvoidanceMath::TryFindRoundedQuadTangents(
+		const FVector2D& Source,
+		const FVector2D& C1,
+		const FVector2D& C2,
+		const FVector2D& C3,
+		const FVector2D& C4,
+		const FVector2D& C,
+		const float R,
+		const float InvSqrT,
+		FVector2D& PointL,
+		FVector2D& PointR,
+		FVector2D& NormalL,
+		FVector2D& NormalR)
+{
+	const FVector2D Centers[4] = {
+		C1 * 2 * InvSqrT + C,
+		C2 * 2 * InvSqrT + C,
+		C3 * 2 * InvSqrT + C,
+		C4 * 2 * InvSqrT + C
+	};
+
+	bool bFoundAny = false;
+	FVector2D BestL, BestR, BestNL, BestNR;
+
+	for (int32 i = 0; i < 4; ++i)
+	{
+		FVector2D CurrL, CurrR, CurrNL, CurrNR;
+        
+		if (TryFindCircleTangents(Source, Centers[i], R, InvSqrT, CurrL, CurrR, CurrNL, CurrNR))
+		{
+			if (!bFoundAny)
+			{
+				BestL = CurrL; BestR = CurrR;
+				BestNL = CurrNL; BestNR = CurrNR;
+				bFoundAny = true;
+			}
+			else
+			{
+				FVector2D DirBestL = BestL - Source;
+				FVector2D DirCurrL = CurrL - Source;
+                
+				if ((DirBestL ^ DirCurrL) < 0.0f)
+				{
+					BestL = CurrL;
+					BestNL = CurrNL;
+				}
+
+				FVector2D DirBestR = BestR - Source;
+				FVector2D DirCurrR = CurrR - Source;
+                
+				if ((DirBestR ^ DirCurrR) > 0.0f)
+				{
+					BestR = CurrR;
+					BestNR = CurrNR;
+				}
+			}
+		}
+	}
+
+	if (bFoundAny)
+	{
+		PointL = BestL;
+		PointR = BestR;
+		NormalL = BestNL;
+		NormalR = BestNR;
+		return true;
+	}
+
+	return false;
 }

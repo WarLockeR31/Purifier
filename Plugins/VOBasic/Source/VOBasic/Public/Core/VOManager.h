@@ -87,6 +87,19 @@ struct FVONeighborView
 		return View;
 	}
 
+	static FVONeighborView CreateRoundedQuad(const FVector2D& P1, const FVector2D& P2, const FVector2D& P3, const FVector2D& P4, const FVector& Vel, const FVector& Acc, float Radius, float CCT, TArray<FVector2D>& VertexBuffer)
+	{
+		FVector2D Center2D = (P1 + P2 + P3 + P4) * 0.25f;
+		FVONeighborView View(FVector(Center2D.X, Center2D.Y, 0.f), Vel, Acc, Radius, CCT, EMinkowskiShapeType::RoundedQuad, ENeighborType::Dynamic);
+		View.VerticesOffset = VertexBuffer.Num();
+		View.NumVertices = 4;
+		VertexBuffer.Add(P1 - Center2D);
+		VertexBuffer.Add(P2 - Center2D);
+		VertexBuffer.Add(P3 - Center2D);
+		VertexBuffer.Add(P4 - Center2D);
+		return View;
+	}
+
 	static FVONeighborView CreateStaticSegment(const FVector& PosA, const FVector& PosB, float CCT, TArray<FVector2D>& VertexBuffer)
 	{
 		FVONeighborView View;

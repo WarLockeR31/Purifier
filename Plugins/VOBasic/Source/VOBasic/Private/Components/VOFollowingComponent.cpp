@@ -458,20 +458,30 @@ void UVOFollowingComponent::GetAgentCapsuleSegment(FVector2D& OutP1, FVector2D& 
 	APawn* Pawn = GetControlledPawn_Local(this);
 	FVector2D WorldPos = FVector2D(Pawn->GetActorLocation());
 
-	if (Params.Shape == EVOAgentShape::Circle || Params.AgentExtent <= KINDA_SMALL_NUMBER)
+	GetAgentCapsuleSegmentLocal(OutP1, OutP2);
+	OutP1 = WorldPos + OutP1;
+	OutP2 =	WorldPos + OutP2;
+}
+
+void UVOFollowingComponent::GetAgentCapsuleSegmentLocal(FVector2D& OutP1, FVector2D& OutP2) const
+{
+	APawn* Pawn = GetControlledPawn_Local(this);
+	
+	const FVOParams& CurParams = GetEffectiveParams();
+	if (CurParams.Shape == EVOAgentShape::Circle || CurParams.AgentExtent <= KINDA_SMALL_NUMBER)
 	{
-		OutP1 = OutP2 = WorldPos;
+		OutP1 = OutP2 = FVector2D::ZeroVector;
 		return;
 	}
 
 	FVector2D WorldAxis;
-	switch (Params.Orientation)
+	switch (CurParams.Orientation)
 	{
 	case EVOOrientation::Forward: WorldAxis = FVector2D(Pawn->GetActorForwardVector()); break;
 	case EVOOrientation::Right:   WorldAxis = FVector2D(Pawn->GetActorRightVector()); break;
 	case EVOOrientation::Custom:
 		{
-			float Rad = FMath::DegreesToRadians(Params.CustomAngle);
+			float Rad = FMath::DegreesToRadians(CurParams.CustomAngle);
 			FVector2D RotatedDir(FMath::Cos(Rad), FMath::Sin(Rad));
 			WorldAxis = FVector2D(Pawn->GetActorForwardVector()) * RotatedDir.X + FVector2D(Pawn->GetActorRightVector()) * RotatedDir.Y;
 		}
@@ -479,9 +489,9 @@ void UVOFollowingComponent::GetAgentCapsuleSegment(FVector2D& OutP1, FVector2D& 
 	default: UE_LOG(LogVOFollowing, Error, TEXT("Invalid orientation for agent capsule!")); return;
 	}
 
-	FVector2D Offset = WorldAxis * Params.AgentExtent;
-	OutP1 = WorldPos - Offset;
-	OutP2 = WorldPos + Offset;
+	FVector2D Offset = WorldAxis * CurParams.AgentExtent;
+	OutP1 = - Offset;
+	OutP2 =	  Offset;
 }
 
 void UVOFollowingComponent::GetAgentCapsuleSegment(const APawn* Pawn, const FVOParams& Params, FVector2D& OutP1, FVector2D& OutP2)

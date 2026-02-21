@@ -69,7 +69,21 @@ namespace AvoidanceMath
 		const FVector2D& Vel,
 		float Tolerance,
 		float& OutTime);
+
+	VOBASIC_API bool FindRayRoundedQuadIntersection(
+		const FVector2D& P1, const FVector2D& P2,
+		const FVector2D& P3, const FVector2D& P4,
+		const FVector2D& Vel,
+		float Radius,
+		float Tolerance,
+		float& OutTime);
 #pragma endregion 
+
+	VOBASIC_API bool IsPointInRoundedQuad(
+		const FVector2D& Point,
+		const FVector2D& P1, const FVector2D& P2,
+		const FVector2D& P3, const FVector2D& P4,
+		float Radius);
 
 	VOBASIC_API bool FindCircleCircleIntersections(
 		const FAOCircle& C1,
@@ -103,6 +117,19 @@ namespace AvoidanceMath
 		const FVector2D& C2,
 		const FVector2D& C,
 		float InvSqrT,
+		FVector2D& PointL,
+		FVector2D& PointR,
+		FVector2D& NormalL,
+		FVector2D& NormalR);
+	VOBASIC_API bool TryFindRoundedQuadTangents(
+		const FVector2D& Source,
+		const FVector2D& C1,
+		const FVector2D& C2,
+		const FVector2D& C3,
+		const FVector2D& C4,
+		const FVector2D& C,
+		const float R,
+		const float InvSqrT,
 		FVector2D& PointL,
 		FVector2D& PointR,
 		FVector2D& NormalL,
