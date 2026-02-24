@@ -382,9 +382,7 @@ namespace
 			}
 
 			FAOCone Cone;
-			bool bConeWasBuilt = ComputeAOCone(N.Radius, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone);
-			UE_LOG(LogTemp, Log, TEXT("Cone was built: %d"), bConeWasBuilt);
-			if (bConeWasBuilt)
+			if (ComputeAOCone(N.Radius, pRel, vRel, NeighborAcc, Params, N, *Ctx.NeighborVertices, Cone))
 				OutCones.Add(Cone);
 		}
 	}
@@ -533,8 +531,8 @@ namespace
 				case EMinkowskiShapeType::Capsule:
 					{						
 						const TArray<FVector2D>& NeiVertices = *Ctx.NeighborVertices;
-                		FVector2D V0 = NeiVertices[Nei.VerticesOffset];
-                		FVector2D V1 = NeiVertices[Nei.VerticesOffset + 1];
+                		FVector2D V0 = NeiVertices[Nei.VerticesOffset] + FVector2D(Nei.Pos);
+                		FVector2D V1 = NeiVertices[Nei.VerticesOffset + 1] + FVector2D(Nei.Pos);
 		
                 		FVector2D SegDir = V1 - V0;
                 		float SegLenSq = SegDir.SizeSquared();
@@ -581,10 +579,10 @@ namespace
 		
                 		if (DistSq > KINDA_SMALL_NUMBER)
                 		{
-                		   float Dist = FMath::Sqrt(DistSq);
-                		   e_ij = ToActor / Dist;
-                		   d_ij = Dist - Nei.Radius;
-                		   bShouldApplyForce = true;
+                			float Dist = FMath::Sqrt(DistSq);
+                			e_ij = ToActor / Dist;
+                			d_ij = Dist - Nei.Radius;
+                			bShouldApplyForce = true;
                 		}
                 		break;
 					}
@@ -603,8 +601,8 @@ namespace
     				    const int32 NumQuadVertices = 4;
     				    for (int32 i = 0; i < NumQuadVertices; ++i)
     				    {
-    				        FVector2D V0 = NeiVertices[Nei.VerticesOffset + i];
-    				        FVector2D V1 = NeiVertices[Nei.VerticesOffset + ((i + 1) % NumQuadVertices)];
+    				        FVector2D V0 = NeiVertices[Nei.VerticesOffset + i] + FVector2D(Nei.Pos);
+    				        FVector2D V1 = NeiVertices[Nei.VerticesOffset + ((i + 1) % NumQuadVertices)] + FVector2D(Nei.Pos);
 				
     				        FVector2D SegDir = V1 - V0;
     				        float SegLenSq = SegDir.SizeSquared();
@@ -822,17 +820,16 @@ namespace
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::AnalyzeTopology);
 			Builder.AnalyzeTopology();
 		}
-		if (Builder.bHasTHOverride)
+		/*if (Builder.bHasTHOverride)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("TH Override: %f"), Builder.THEffective);
-		}
+		}*/
 
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::SampleBoundaries);
 			Builder.SampleBoundaries();
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("U1"));
 		if (Builder.PointsL.Num() == 0)
 			return false;
 
@@ -852,8 +849,6 @@ namespace
 			Builder.ResolveConvexityAndIntersections(FanIndL, FanIndR);
 		}
 
-		UE_LOG(LogTemp, Warning, TEXT("U2"));
-
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::ComputeAOCone::Validation&Finalization);
 			if (Builder.ValidateShape())
@@ -863,8 +858,6 @@ namespace
 				return true;
 			}
 		}
-
-		UE_LOG(LogTemp, Warning, TEXT("U3"));
 		
 		return false;
 	}
@@ -922,8 +915,6 @@ namespace
 					const FVector2D& P2 = NeighborVertices[Neighbor.VerticesOffset + 1];
 					const FVector2D& P3 = NeighborVertices[Neighbor.VerticesOffset + 2];
 					const FVector2D& P4 = NeighborVertices[Neighbor.VerticesOffset + 3];
-					UE_LOG(LogTemp, Warning, TEXT("P1: %f, %f; P2: %f, %f; P3: %f, %f; P4: %f, %f"),
-						P1.X, P1.Y, P2.X, P2.Y, P3.X, P3.Y, P4.X, P4.Y)
 					if (!AvoidanceMath::TryFindRoundedQuadTangents(GrazeSourceP, P1, P2, P3, P4, CenterLineP, R, InvSqrT, PointL, PointR, NormalL, NormalR))
 					{
 						LastValidT = t;
@@ -1419,7 +1410,7 @@ namespace
 			if (HitTime > 0)
 			{
 				bIsPreColliding = true;
-				//if (HitTime <= Params.TauHorizon)
+				if (HitTime <= Params.TauHorizon)
 				{
 					THEffective = HitTime;
 					bHasTHOverride = true;
