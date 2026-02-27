@@ -314,6 +314,10 @@ void UVOManager::Tick(float DeltaTime)
 	LLM_SCOPE_BYTAG(VOAO);
 	TRACE_CPUPROFILER_EVENT_SCOPE(UVOManager::Tick);
 
+#if DEBUG_ON
+	FlushPersistentDebugLines(GetWorld());
+#endif
+
 	if (GlobalAgentList.Num() == 0)
 		return;
 	
@@ -571,7 +575,6 @@ void UVOManager::UpdateAvoidance()
 
 			// DEBUG DRAW AO
 #ifdef DEBUG_ON
-			FlushPersistentDebugLines(Comp->GetWorld());
 			if (Comp->bDebugDraw)
 			{
                
@@ -769,7 +772,8 @@ void UVOManager::GatherNeighbors(
 					// Swap vertices to maintain CCW winding.
 					Swap(P2, P4);
 				}
-				Neis.Add(FVONeighborView::CreateRoundedQuad(P1, P2, P3, P4, NVel, NAcc, MinkRadius, Cand.t, NeighborVerticesBuffer));
+				float Distance = AvoidanceMath::FindDistanceToRoundedQuadSq(FVector2D(Pos), P1, P2, P3, P4, MinkRadius);
+				Neis.Add(FVONeighborView::CreateRoundedQuad(P1, P2, P3, P4, NVel, NAcc, MinkRadius, Cand.t, Distance, NeighborVerticesBuffer));
 			}
 			else if (AgentShape == EVOAgentShape::Capsule || OtherAgentShape == EVOAgentShape::Capsule)
 			{
@@ -791,21 +795,26 @@ void UVOManager::GatherNeighbors(
 					// Agent is Circle, Other is Capsule
 					Other->GetAgentCapsuleSegment(SegA_world, SegB_world);
 				}
-				Neis.Add(FVONeighborView::CreateCapsule(FVector(SegA_world.X, SegA_world.Y, WorldZ), FVector(SegB_world.X, SegB_world.Y, WorldZ), NVel, NAcc, MinkRadius, Cand.t, NeighborVerticesBuffer));
+				FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(Pos), SegA_world, SegB_world);
+				float Distance = FVector2D::Distance(FVector2D(Pos), ClosestPoint) - MinkRadius;
+				Neis.Add(FVONeighborView::CreateCapsule(FVector(SegA_world.X, SegA_world.Y, WorldZ), FVector(SegB_world.X, SegB_world.Y, WorldZ), NVel, NAcc, MinkRadius, Cand.t, Distance, NeighborVerticesBuffer));
 			}
 			else
 			{
 				// Circle + Circle = Circle.
 				FVector NPos = Other->GetOwnerLocation();
-				Neis.Add(FVONeighborView::CreateCircle(NPos, NVel, NAcc, MinkRadius, Cand.t, ENeighborType::Dynamic));
+				float Distance = FVector2D::Distance(FVector2D(Pos), FVector2D(NPos)) - MinkRadius;
+				Neis.Add(FVONeighborView::CreateCircle(NPos, NVel, NAcc, MinkRadius, Cand.t, Distance, ENeighborType::Dynamic));
 			}
 		}
 		else
 		{
 			FVector P1 = FVector(Cand.SegP1.X, Cand.SegP1.Y, 0);
 			FVector P2 = FVector(Cand.SegP2.X, Cand.SegP2.Y, 0);
+			FVector2D ClosestPoint = FMath::ClosestPointOnSegment2D(FVector2D(Pos), FVector2D(P1), FVector2D(P2));
+			float Distance = FVector2D::Distance(FVector2D(Pos), ClosestPoint);
 			
-			Neis.Add(FVONeighborView::CreateStaticSegment(P1, P2, Cand.t, NeighborVerticesBuffer));
+			Neis.Add(FVONeighborView::CreateStaticSegment(P1, P2, Cand.t, Distance, NeighborVerticesBuffer));
 		}
 	}
 }
@@ -963,6 +972,7 @@ float UVOManager::CalculateCCT_AO(
 	const FVector2D& P,
 	const FVector2D& Q)
 {
+	// TODO: Add envelope radius?
 	FVector2D Pos = FVector2D(Comp->GetOwnerLocation());
 	FVector2D ClosestPt = FMath::ClosestPointOnSegment2D(Pos, P, Q);
 

@@ -496,8 +496,18 @@ bool AvoidanceMath::IsPointInRoundedQuad(
 	const FVector2D& P4,
 	float Radius)
 {
+	return FindDistanceToQuadSq(Point, P1, P2, P3, P4) == 0.f;
+}
+
+float AvoidanceMath::FindDistanceToQuadSq(
+	const FVector2D& Point,
+	const FVector2D& P1,
+	const FVector2D& P2,
+	const FVector2D& P3,
+	const FVector2D& P4)
+{
+	// TODO: Check this func
 	const FVector2D Points[4] = { P1, P2, P3, P4 };
-	const float RadiusSq = FMath::Square(Radius);
     
 	bool bAllPositive = true;
 	bool bAllNegative = true;
@@ -539,10 +549,21 @@ bool AvoidanceMath::IsPointInRoundedQuad(
     
 	if (bAllPositive || bAllNegative)
 	{
-		return true;
+		return 0.f;
 	}
     
-	return MinDistSq <= RadiusSq;
+	return MinDistSq;
+}
+
+float AvoidanceMath::FindDistanceToRoundedQuadSq(
+	const FVector2D& Point,
+	const FVector2D& P1,
+	const FVector2D& P2,
+	const FVector2D& P3,
+	const FVector2D& P4,
+	float Radius)
+{
+	return FMath::Sqrt(FindDistanceToQuadSq(Point, P1, P2, P3, P4)) - Radius;
 }
 
 bool AvoidanceMath::FindCircleCircleIntersections(

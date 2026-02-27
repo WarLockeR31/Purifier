@@ -348,6 +348,32 @@ void UVOFollowingComponent::ResetAgentOrientation()
 	MarkEffectiveDirty();
 }
 
+void UVOFollowingComponent::SetAgentAOScoring(FAOScoringParams NewAOScoring)
+{
+	EffectiveParams.AOScoringParams = NewAOScoring; // For instant application
+	AOScoringParamsOverride = NewAOScoring;
+	bHasScoringOverride = true;
+}
+
+void UVOFollowingComponent::ResetAgentScoring()
+{
+	bHasScoringOverride = false;
+	MarkEffectiveDirty();
+}
+
+void UVOFollowingComponent::SetAgentAOSocialForces(FAOSocialForces NewAOSocialForces)
+{
+	EffectiveParams.AOSocialForces = NewAOSocialForces; // For instant application
+	AOSocialForcesOverride = NewAOSocialForces;
+	bHasSocialForcesOverride = true;
+}
+
+void UVOFollowingComponent::ResetAgentSocialForces()
+{
+	bHasSocialForcesOverride = false;
+	MarkEffectiveDirty();
+}
+
 const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 {
 	// Return effective params if they are already computed
@@ -392,6 +418,21 @@ const FVOParams& UVOFollowingComponent::GetEffectiveParams() const
 
 	if (bHasOrientationOverride)
 		EffectiveParams.Orientation = OrientationOverride;
+
+	if (bHasScoringOverride)
+	{
+		switch (EffectiveParams.AvoidanceStyle)
+		{
+		case EAvoidanceStyle::VelocityObstacle:
+			UE_LOG(LogVOFollowing, Warning, TEXT("VOAvoidanceStyle::VelocityObstacle is not supported for custom scoring params!"));
+			break;
+		case EAvoidanceStyle::AccelerationObstacle:
+			EffectiveParams.AOScoringParams = AOScoringParamsOverride;
+			break;
+		default:
+			UE_LOG(LogVOFollowing, Warning, TEXT("Not implemented avoidance style: %d"), EffectiveParams.AvoidanceStyle);
+		}
+	}
 	
 	bEffectiveDirty = false;
 	return EffectiveParams;

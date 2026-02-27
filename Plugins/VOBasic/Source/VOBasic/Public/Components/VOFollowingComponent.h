@@ -7,6 +7,33 @@ DECLARE_LOG_CATEGORY_EXTERN(LogVOFollowing, Warning, All);
 
 class UVOSettings;
 
+USTRUCT(BlueprintType)
+struct FAOScoringParams
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Scoring") float WeightEffort = 400.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Scoring") float WeightDesired = 400.f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Scoring") float ProximityTargetThreshold = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Scoring") float WeightTurningPenalty = 100.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Scoring") float TurningRestrictionRange = 100.f;
+};
+
+USTRUCT(BlueprintType)
+struct FAOSocialForces
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float CloseRange = 20.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float CloseForce = 50.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float FarRange = 60.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float FarForce = 20.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float StaticRange = 20.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="AO Social Force") float StaticForce = 50.f;
+};
+
 UENUM(BlueprintType)
 enum class EAvoidanceStyle : uint8
 {
@@ -55,6 +82,12 @@ struct FVOParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
 		meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
 			EditConditionHides))								float			TauAcceleration = 1.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+		meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
+			EditConditionHides))								FAOScoringParams AOScoringParams;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VO",
+    	meta=(EditCondition="AvoidanceStyle==EAvoidanceStyle::AccelerationObstacle",
+    		EditConditionHides))								FAOSocialForces	AOSocialForces;
 };
 
 UENUM(BlueprintType)
@@ -127,6 +160,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentShape();
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAgentOrientation(EVOOrientation NewOrientation);
 	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentOrientation();
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAgentAOScoring(FAOScoringParams NewAOScoring);
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentScoring();
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  SetAgentAOSocialForces(FAOSocialForces NewAOSocialForces);
+	UFUNCTION(BlueprintCallable, Category="VO|Mods") void  ResetAgentSocialForces();
 
 	UFUNCTION(BlueprintCallable, Category="VO") const FVOParams& GetEffectiveParams() const;
 
@@ -196,6 +233,12 @@ private:
 
 	bool			bHasOrientationOverride		= false;
 	EVOOrientation	OrientationOverride			= EVOOrientation::Forward;
+
+	bool			bHasScoringOverride			= false;
+	FAOScoringParams AOScoringParamsOverride;
+
+	bool			bHasSocialForcesOverride	= false;
+	FAOSocialForces AOSocialForcesOverride;
 	
 	bool    bHasGoal = false;
 	FVector Goal     = FVector::ZeroVector;

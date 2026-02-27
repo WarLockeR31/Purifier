@@ -84,6 +84,19 @@ namespace AvoidanceMath
 		const FVector2D& P1, const FVector2D& P2,
 		const FVector2D& P3, const FVector2D& P4,
 		float Radius);
+		
+	VOBASIC_API float FindDistanceToQuadSq(
+		const FVector2D& Point,
+		const FVector2D& P1,
+		const FVector2D& P2,
+		const FVector2D& P3,
+		const FVector2D& P4);
+
+	VOBASIC_API float FindDistanceToRoundedQuadSq(
+		const FVector2D& Point,
+		const FVector2D& P1, const FVector2D& P2,
+		const FVector2D& P3, const FVector2D& P4,
+		float Radius);
 
 	VOBASIC_API bool FindCircleCircleIntersections(
 		const FAOCircle& C1,

@@ -150,8 +150,10 @@ namespace
 		const FVector2D& CandidateAcc,
 		const FVector2D& DesiredAcc,
 		const FVector2D& CurAcc,
-		const TArray<FVONeighborView>& Neis,
+		const FVector2D& CurrentVel,
 		const FVector& ActorPos,
+		const FVector& TargetPos,
+		float ObstacleProximity,
 		const FVOParams& Params);
 
 	bool IsPointInsideAO(const FAOConesSoA& Cones, int32 ConeIdx, const FVector2D& P);
@@ -334,7 +336,9 @@ namespace
 			const FVector2D pRel(N.Pos.X - ActorPos.X, N.Pos.Y - ActorPos.Y);
 
 			// TODO: For all shapes, add fallback?
-			switch (N.ShapeType)
+			if (N.Distance <= 0)
+				continue;
+			/*switch (N.ShapeType)
 			{
 			case EMinkowskiShapeType::Circle:
 				if (FMath::Square(N.Radius) >= pRel.SizeSquared())
@@ -371,7 +375,7 @@ namespace
 				break;
 			default:
 				UE_LOG(LogTemp, Warning, TEXT("Unknown shape type %d"), (int32)N.ShapeType);
-			}
+			}*/
 
 			const FVector2D vRel(ActorVel.X - N.Vel.X, ActorVel.Y - N.Vel.Y);
 			
@@ -481,17 +485,20 @@ namespace
 		if (Neis.Num() > 0)
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(AO::SelectBestCandidate::SFMRepulsionCalculation);
+
+			const FAOSocialForces& SF = Params.AOSocialForces;
 			
 			// Agents params
-			const float A1 = 10.f; // Long-range strength
-			const float B1 = 1.65f * Params.AgentRadius; // Long-range range
-			const float A2 = /*300.f*/20.f;  // Short-range (physical) strength
-			const float B2 = /*0.2f*/20.f;  // Short-range range
+			const float A1 = SF.FarForce; // Long-range strength
+			const float B1 = SF.FarRange; // Long-range range
+			const float A2 = SF.CloseForce;  // Short-range (physical) strength
+			const float B2 = SF.CloseRange;  // Short-range range
+			// TODO: Remove? or implement on Broad phase?
 			const float Lambda = 1/*0.75f*/; // Anisotropy factor
 
 			// Static obstacles params
-			const float A = 50.f;
-			const float B = 20.f;
+			const float A = SF.StaticForce;
+			const float B = SF.StaticRange;
 
 			const float VertexMergeThreshold = 10.0f;
 			const float VertexMergeThresholdSq = FMath::Square(VertexMergeThreshold);
@@ -724,6 +731,13 @@ namespace
 		}
 #endif
 
+		float MinDist = FLT_MAX;
+		for (const FVONeighborView& Nei : Neis)
+		{
+			if (Nei.Distance < MinDist)
+				MinDist = Nei.Distance;
+		}
+		
 		auto& OutCandidates = *Ctx.OutCandidates;
 		int32& OutBestIdx = *Ctx.OutBestCandidateIdx;
 
@@ -741,8 +755,8 @@ namespace
 			OutCandidates.Add(P);
 			int32 CurrentIdx = OutCandidates.Num() - 1;
 
-			float Score = ScoreAccelerationCandidate(P, DesiredAcc, CurAcc, Neis, ActorPos, Params);
-
+			float Score = ScoreAccelerationCandidate(P, DesiredAcc, CurAcc, FVector2D(Ctx.CurrentVelocity), ActorPos, TargetPos, MinDist, Params);
+			
 			if (Score > BestScore)
 			{
 				BestScore = Score;
@@ -1878,18 +1892,44 @@ namespace
 		const FVector2D& CandidateAcc,
 		const FVector2D& DesiredAcc,
 		const FVector2D& CurAcc,
-		const TArray<FVONeighborView>& Neis,
+		const FVector2D& CurrentVel,
 		const FVector& ActorPos,
+		const FVector& TargetPos,
+		const float ObstacleProximity,
 		const FVOParams& Params)
 	{
-		const float W_Proximity = 1.0f;
-		const float W_Effort = 0.00f;
-		const float W_Smooth = 0.0f;
+		const FAOScoringParams& SP = Params.AOScoringParams;
 
-		float DistDesSq = FVector2D::DistSquared(CandidateAcc, DesiredAcc);
-		float MagSq = CandidateAcc.SizeSquared();
-		float JerkSq = FVector2D::DistSquared(CandidateAcc, CurAcc);
+		float ToDesiredLen = (DesiredAcc - CandidateAcc).Size();
+		float ToDesiredLenNorm = ToDesiredLen / (2 * Params.MaxAcceleration);
+		float Effort = CandidateAcc.Size() / Params.MaxAcceleration;
 
-		return -(W_Proximity * DistDesSq) - (W_Effort * MagSq) - (W_Smooth * JerkSq);
+		// gamma: penalty for turning against current angular velocity
+		float gamma = 0.f;
+		if (!CurrentVel.IsZero())
+		{
+			FVector2D VelDir = CurrentVel.GetSafeNormal();
+			FVector2D LateralDir(-VelDir.Y, VelDir.X);
+			
+			float CurLat = FVector2D::DotProduct(CurAcc, LateralDir);
+			float CandLat = FVector2D::DotProduct(CandidateAcc, LateralDir);
+
+			// Penalty if candidate acceleration changes the side of turning
+			if (CurLat * CandLat < -KINDA_SMALL_NUMBER)
+			{
+				gamma = 1.f;
+			}
+		}
+
+		float po = ObstacleProximity < SP.TurningRestrictionRange ?
+			(1.f - ObstacleProximity / SP.TurningRestrictionRange) :
+			0.f;
+		float pt = (FVector2D::DistSquared(FVector2D(ActorPos), FVector2D(TargetPos)) < FMath::Square(SP.ProximityTargetThreshold)) ? 1.f : 0.f;
+			
+		// Adaptation of HZD formula
+		float effort = (1.f - po) * (SP.WeightDesired * ToDesiredLenNorm + SP.WeightTurningPenalty * gamma)
+		             + 0.5f * (1.f - pt) * (SP.WeightEffort * Effort);
+
+		return -effort;
 	}
 }

@@ -57,6 +57,7 @@ struct FVONeighborView
 	FVector Acc = FVector::ZeroVector;   // world XY
 	float Radius = 0.f;					 // cm
 	float CCT = 0.f;					 // Conservative Collision Time
+	float Distance = 0.f;
 	EMinkowskiShapeType ShapeType = EMinkowskiShapeType::None;
 	ENeighborType NeighborType = ENeighborType::None;
 
@@ -65,19 +66,19 @@ struct FVONeighborView
 	int32 VerticesOffset = -1;
 
 	FVONeighborView() = default;
-	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, EMinkowskiShapeType ShapeType_)
-		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), ShapeType(ShapeType_) { }
-	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, EMinkowskiShapeType ShapeType_, ENeighborType NeighborType)
-		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), ShapeType(ShapeType_), NeighborType(NeighborType) { }
+	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, float Distance_, EMinkowskiShapeType ShapeType_)
+		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), Distance(Distance_), ShapeType(ShapeType_) { }
+	FVONeighborView(const FVector& Pos_, const FVector& Vel_, const FVector& Acc_, float Radius_, float CCT_, float Distance_, EMinkowskiShapeType ShapeType_, ENeighborType NeighborType)
+		: Pos(Pos_), Vel(Vel_), Acc(Acc_), Radius(Radius_), CCT(CCT_), Distance(Distance_), ShapeType(ShapeType_), NeighborType(NeighborType) { }
 
-	static FVONeighborView CreateCircle(const FVector& Pos, const FVector& Vel, const FVector& Acc, float Radius, float CCT, ENeighborType NeighborType)
+	static FVONeighborView CreateCircle(const FVector& Pos, const FVector& Vel, const FVector& Acc, float Radius, float CCT, float Distance, ENeighborType NeighborType)
 	{
-		return FVONeighborView(Pos, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Circle, NeighborType);
+		return FVONeighborView(Pos, Vel, Acc, Radius, CCT, Distance, EMinkowskiShapeType::Circle, NeighborType);
 	}
 
-	static FVONeighborView CreateCapsule(const FVector& PosA, const FVector& PosB, const FVector& Vel, const FVector& Acc, float Radius, float CCT, TArray<FVector2D>& VertexBuffer)
+	static FVONeighborView CreateCapsule(const FVector& PosA, const FVector& PosB, const FVector& Vel, const FVector& Acc, float Radius, float CCT, float Distance, TArray<FVector2D>& VertexBuffer)
 	{
-		FVONeighborView View((PosA + PosB) * 0.5f, Vel, Acc, Radius, CCT, EMinkowskiShapeType::Capsule);
+		FVONeighborView View((PosA + PosB) * 0.5f, Vel, Acc, Radius, CCT, Distance, EMinkowskiShapeType::Capsule);
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
 		FVector OffsetA = PosA - View.Pos;
@@ -87,10 +88,10 @@ struct FVONeighborView
 		return View;
 	}
 
-	static FVONeighborView CreateRoundedQuad(const FVector2D& P1, const FVector2D& P2, const FVector2D& P3, const FVector2D& P4, const FVector& Vel, const FVector& Acc, float Radius, float CCT, TArray<FVector2D>& VertexBuffer)
+	static FVONeighborView CreateRoundedQuad(const FVector2D& P1, const FVector2D& P2, const FVector2D& P3, const FVector2D& P4, const FVector& Vel, const FVector& Acc, float Radius, float CCT, float Distance, TArray<FVector2D>& VertexBuffer)
 	{
 		FVector2D Center2D = (P1 + P2 + P3 + P4) * 0.25f;
-		FVONeighborView View(FVector(Center2D.X, Center2D.Y, 0.f), Vel, Acc, Radius, CCT, EMinkowskiShapeType::RoundedQuad, ENeighborType::Dynamic);
+		FVONeighborView View(FVector(Center2D.X, Center2D.Y, 0.f), Vel, Acc, Radius, CCT, Distance, EMinkowskiShapeType::RoundedQuad, ENeighborType::Dynamic);
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 4;
 		VertexBuffer.Add(P1 - Center2D);
@@ -100,11 +101,12 @@ struct FVONeighborView
 		return View;
 	}
 
-	static FVONeighborView CreateStaticSegment(const FVector& PosA, const FVector& PosB, float CCT, TArray<FVector2D>& VertexBuffer)
+	static FVONeighborView CreateStaticSegment(const FVector& PosA, const FVector& PosB, float CCT, float Distance, TArray<FVector2D>& VertexBuffer)
 	{
 		FVONeighborView View;
 		View.Pos = (PosA + PosB) * 0.5f;
 		View.CCT = CCT;
+		View.Distance = Distance;
 		View.VerticesOffset = VertexBuffer.Num();
 		View.NumVertices = 2;
 		View.ShapeType = EMinkowskiShapeType::Segment;
